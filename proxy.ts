@@ -2,6 +2,7 @@
  * proxy.ts  (Next.js 16 — replaces the old middleware.ts convention)
  * Edge proxy — runs before every matched request.
  * Protects /onboarding and /dashboard; redirects unauthenticated users to /login.
+ * Redirects authenticated users to /setup until gateway setup is complete.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,6 +17,26 @@ const PROTECTED_PATHS = [
   "/dashboard",   // kept so old links still redirect rather than 404
   "/onboarding",
   "/logs",
+  "/analytics",
+  "/setup",
+  "/agents",
+  "/tool-logs",
+  "/mission-control",
+];
+
+// Main app paths that are gated behind setup completion.
+// /settings is intentionally excluded so users can always reconfigure freely.
+const SETUP_GATED_PATHS = [
+  "/marketplace",
+  "/officebuilding",
+  "/playground",
+  "/dashboard",
+  "/onboarding",
+  "/logs",
+  "/analytics",
+  "/agents",
+  "/tool-logs",
+  "/mission-control",
 ];
 
 // If authenticated user hits /login, bounce them to /marketplace
@@ -28,6 +49,9 @@ export async function proxy(request: NextRequest) {
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
   const isAuthPage = AUTH_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  );
+  const isSetupGated = SETUP_GATED_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
 
@@ -43,6 +67,15 @@ export async function proxy(request: NextRequest) {
   if (isAuthPage && session) {
     // Already authenticated — skip login page, go to marketplace
     return NextResponse.redirect(new URL("/marketplace", request.url));
+  }
+
+  // If authenticated but setup not yet done, redirect to the setup wizard.
+  // The iqbandit_setup cookie is set by /api/setup/complete when the wizard finishes.
+  if (session && isSetupGated) {
+    const setupDone = request.cookies.get("iqbandit_setup")?.value === "done";
+    if (!setupDone) {
+      return NextResponse.redirect(new URL("/setup", request.url));
+    }
   }
 
   return NextResponse.next();

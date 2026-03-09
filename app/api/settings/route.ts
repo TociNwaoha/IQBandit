@@ -14,6 +14,7 @@ const ALLOWED_KEYS: (keyof GatewaySettings)[] = [
   "OPENCLAW_CHAT_PATH",
   "STARTCLAW_CHAT_MODE",
   "DEFAULT_MODEL",
+  "PROVIDER_PRESET",
 ];
 
 const TOKEN_MASK = "***configured***";
@@ -93,6 +94,13 @@ function validateAndNormalize(patch: Partial<GatewaySettings>): ValidationResult
       } else {
         clean.DEFAULT_MODEL = raw;
       }
+      continue;
+    }
+
+    if (key === "PROVIDER_PRESET") {
+      // Treat as an opaque label — any string (including empty) is acceptable.
+      // The UI validates against known preset IDs; the server just stores it.
+      clean.PROVIDER_PRESET = raw;
       continue;
     }
   }

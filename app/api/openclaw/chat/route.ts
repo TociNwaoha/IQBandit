@@ -25,6 +25,17 @@ import { chatCompletion, chatCompletionStream, ChatMessage } from "@/lib/opencla
 import { getChatMode } from "@/lib/llm";
 import { logChatRequest } from "@/lib/logger";
 import { checkRateLimit, getRateLimitKey } from "@/lib/ratelimit";
+import {
+  addMessage, upsertMessage,
+  updateConversationMeta, autoTitleFromFirstMessage,
+} from "@/lib/conversations";
+import { getAgent } from "@/lib/agents";
+import { logToolAudit, type ConsentTool } from "@/lib/toolAudit";
+import { getDepartmentPolicy, resolveEffectiveAgentSettings } from "@/lib/departmentPolicies";
+import { gmailSearch }          from "@/lib/mcp/gmail";
+import { isMcpGmailConfigured }    from "@/lib/mcp/stdioClient";
+import { randomUUID } from "crypto";
+import { buildWorkspaceContext } from "@/lib/workspace";
 
 // ---------------------------------------------------------------------------
 // Request body shape
@@ -37,6 +48,152 @@ export interface ChatRequestBody {
   max_tokens?: number;
   /** Set to true to receive a streaming SSE response instead of a single JSON object */
   stream?: boolean;
+  /** If provided, the user message and assistant response are persisted to this conversation. */
+  conversationId?: string;
+  /**
+   * Optional stable UUID for the user's message.
+   * When provided, the server uses INSERT OR IGNORE — safe to retry without duplicates.
+   * If omitted a fresh UUID is generated server-side.
+   */
+  userMessageId?: string;
+  /**
+   * The agent ID for this conversation, used for tool consent enforcement.
+   * When provided, the server checks the agent's ask_before_tools/ask_before_web/ask_before_files settings.
+   */
+  agentId?: string;
+  /**
+   * When true, the server may return { type: "tool_intent", intent: {...} } instead of
+   * calling the gateway, if the message appears to require a guarded tool and the agent
+   * requires consent for that tool.
+   */
+  toolConsentMode?: boolean;
+  /**
+   * When provided, the server logs the audit decision and bypasses consent checking,
+   * proceeding directly to the gateway call.
+   */
+  toolConsentOverride?: { tool: ConsentTool; allowOnce: true };
+}
+
+// ---------------------------------------------------------------------------
+// Tool intent detection — deterministic heuristic
+// ---------------------------------------------------------------------------
+
+interface ToolIntent {
+  tool:    ConsentTool;
+  reason:  string;
+  query?:  string;
+  action?: "search" | "read"; // Gmail-specific
+}
+
+const GMAIL_PATTERNS = [
+  /\bemails?\b/i, /\bgmail\b/i, /\binbox\b/i,
+  /check\s+my\s+(emails?|gmail|inbox|mail)\b/i,
+  /search\s+(my\s+)?(emails?|gmail|inbox|mail)\b/i,
+  /\b(latest|recent|new|last)\s+\d*\s*emails?\b/i,
+  /\bmost\s+recent\s+\d*\s*emails?\b/i,
+  /\bfind\s+(the\s+)?emails?\b/i,
+  /\bemails?\s+(about|from|regarding)\b/i,
+  /\bfrom\s+my\s+(inbox|emails?|gmail|mail)\b/i,
+  /\bin\s+my\s+(inbox|emails?|gmail|mail)\b/i,
+  /\bsummariz[ei]\s+.*emails?\b/i,
+  /\bmy\s+(unread\s+)?emails?\b/i,
+  /\bshow\s+(me\s+)?(my\s+)?emails?\b/i,
+  /\bget\s+(my\s+)?emails?\b/i,
+];
+
+const WEB_PATTERNS = [
+  /\bsearch\b/i, /\bbrowse\b/i, /\blook\s*up\b/i, /\bfind\s+online\b/i,
+  /\blatest\b/i, /\bcurrent\b/i, /\bnews\b/i, /\bverify\b/i,
+  /\bwhat.s\s+happening\b/i, /\brecent\b/i, /\btoday\b/i, /\bcheck\s+online\b/i,
+];
+
+const FILE_PATTERNS = [
+  /check\s+my\s+files?\b/i, /\bin\s+my\s+docs?\b/i, /read\s+the\s+pdf\b/i,
+  /from\s+the\s+handoff\b/i, /in\s+the\s+uploaded\s+file\b/i, /search\s+documents?\b/i,
+  /from\s+my\s+files?\b/i, /\bpdf\b/i, /\bdocument\b/i, /\bspreadsheet\b/i,
+];
+
+/**
+ * Extracts a usable Gmail search query from natural language.
+ * Tries to pull "from:X", keyword phrases, or falls back to key terms.
+ */
+function buildGmailQuery(text: string): string {
+  // General "show me recent / new emails" requests → inbox newest-first
+  if (/\b(most\s+recent|latest|last\s+\d+|newest|\d+\s+recent|\d+\s+new|new\s+emails?|any\s+new|list\s+(my\s+)?(recent|latest|new))\b/i.test(text)) {
+    return "in:inbox";
+  }
+
+  const fromMatch = text.match(/\bfrom\s+([^\s,.!?]{2,40}(?:\s+[^\s,.!?]{2,20})?)/i);
+  if (fromMatch) return `from:${fromMatch[1].trim()}`;
+  const aboutMatch = text.match(/\b(?:about|regarding|subject)[:\s]+([^,.!?]{3,60})/i);
+  if (aboutMatch) return aboutMatch[1].trim();
+
+  // Strip common/filler words; keep only likely search terms (names, topics)
+  const cleaned = text
+    .replace(/\b(search|find|check|summarize|get|show|list|tell|give|any|new|my|gmail|emails?|inbox|latest|recent|most|the|an?|i|me|you|look|look\s+up|in|from|for|unread|do|have|got|there|what|are|is)\b/gi, " ")
+    .replace(/[^\w\s@.:-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+
+  // If ≤ 3 meaningful words remain, use them as a specific search query;
+  // otherwise the message is too complex / off-topic → return inbox
+  const wordCount = cleaned.split(/\s+/).filter(Boolean).length;
+  if (!cleaned || wordCount > 3) return "in:inbox";
+
+  return cleaned;
+}
+
+/**
+ * Returns the Gmail search query from the previous user message if it had Gmail
+ * intent, or null if the previous exchange was not Gmail-related.
+ * "Previous" = the user message immediately before the current (last) one.
+ */
+function getPreviousGmailQuery(
+  messages: Array<{ role: string; content: string }>,
+): string | null {
+  const userMsgs = messages.filter((m) => m.role === "user");
+  const prevUserMsg = userMsgs.at(-2); // -1 is current, -2 is one exchange back
+  if (!prevUserMsg) return null;
+  const isGmail = GMAIL_PATTERNS.some((re) => re.test(prevUserMsg.content));
+  return isGmail ? buildGmailQuery(prevUserMsg.content) : null;
+}
+
+function detectToolIntent(text: string): ToolIntent | null {
+  const hasGmail = GMAIL_PATTERNS.some((re) => re.test(text));
+  const hasFiles = FILE_PATTERNS.some((re) => re.test(text));
+  const hasWeb   = WEB_PATTERNS.some((re) => re.test(text));
+
+  if (!hasGmail && !hasFiles && !hasWeb) return null;
+
+  // GMAIL takes highest priority when email is explicitly referenced
+  if (hasGmail) {
+    const q = buildGmailQuery(text);
+    return {
+      tool:   "gmail",
+      action: "search",
+      reason: "This agent wants to search your Gmail to answer your question.",
+      query:  q.slice(0, 120),
+    };
+  }
+
+  // FILES take priority over WEB (local / safer)
+  if (hasFiles) {
+    const m = text.match(/(?:read|search|check|from)[^\w]*(.*)/i);
+    return {
+      tool:   "files",
+      reason: "This agent wants to search or read from your files to answer your question.",
+      query:  m?.[1]?.slice(0, 120).trim() || undefined,
+    };
+  }
+
+  // WEB intent
+  const m = text.match(/(?:search|look\s*up|browse|find)[^\w]*(.*)/i);
+  return {
+    tool:   "web",
+    reason: "This agent wants to search the web to answer your question.",
+    query:  m?.[1]?.slice(0, 120).trim() || undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +371,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { model, messages, temperature, max_tokens, stream } = body;
+  const {
+    model, messages, temperature, max_tokens, stream,
+    conversationId, userMessageId,
+    agentId, toolConsentMode, toolConsentOverride,
+  } = body;
 
   if (!model || typeof model !== "string") {
     return NextResponse.json({ error: "model is required" }, { status: 400 });
@@ -226,11 +387,204 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── 4b. Tool consent enforcement ─────────────────────────────────────────
+  // Gmail is checked FIRST, independently of agent settings — it only requires
+  // that the Gmail OAuth connection is active. The client signals it can handle
+  // consent modals by sending toolConsentMode: true.
+  // Conversational continuity: if the current message has no Gmail signal but
+  // the previous user message did, treat this as a Gmail follow-up.
+  if (toolConsentMode && !toolConsentOverride) {
+    const lastUserMsg = messages.slice().reverse().find((m) => m.role === "user");
+    if (lastUserMsg?.content) {
+      const intent = detectToolIntent(lastUserMsg.content);
+
+      // Direct Gmail signal on current message
+      let gmailIntent = intent?.tool === "gmail" ? intent : null;
+
+      // Conversation continuity: no direct signal, but previous exchange was Gmail
+      if (!gmailIntent) {
+        const prevQuery = getPreviousGmailQuery(messages);
+        if (prevQuery !== null) {
+          // Only continue if the current message doesn't strongly suggest a different tool
+          const hasOtherIntent = intent?.tool === "web" || intent?.tool === "files";
+          if (!hasOtherIntent) {
+            gmailIntent = {
+              tool:   "gmail",
+              action: "search",
+              reason: "Continuing Gmail search from the previous message.",
+              query:  prevQuery,
+            };
+          }
+        }
+      }
+
+      if (gmailIntent) {
+        // Trigger consent when MCP Gmail is configured (env var present).
+        // If not configured, fall through so the model answers naturally.
+        if (isMcpGmailConfigured()) {
+          return NextResponse.json({
+            type:   "tool_intent",
+            intent: {
+              tool:   "gmail",
+              action: gmailIntent.action ?? "search",
+              reason: gmailIntent.reason,
+              query:  gmailIntent.query ?? null,
+            },
+          }, { status: 200, headers: { "Cache-Control": "no-store, private" } });
+        }
+        // MCP Gmail not configured — fall through so model can answer naturally
+      }
+    }
+  }
+
+  // Web / Files consent — requires an agent with ask_before_tools enabled.
+  // Uses EFFECTIVE settings (department policy + optional agent overrides) so that
+  // department-level policy is respected even when the agent has not individually
+  // changed a setting.
+  if (agentId && toolConsentMode && !toolConsentOverride) {
+    const agent = getAgent(agentId);
+    if (agent) {
+      const policy    = agent.department ? getDepartmentPolicy(agent.department) : null;
+      const effective = resolveEffectiveAgentSettings(agent, policy);
+
+      if (effective.ask_before_tools) {
+        const lastUserMsg = messages.slice().reverse().find((m) => m.role === "user");
+        if (lastUserMsg?.content) {
+          const intent = detectToolIntent(lastUserMsg.content);
+          // Gmail already handled above — only process web/files here
+          if (intent && intent.tool !== "gmail") {
+            const isWebTool   = intent.tool === "web";
+            const toolAllowed = isWebTool ? effective.allow_web   : effective.allow_files;
+            const askBefore   = isWebTool ? effective.ask_before_web : effective.ask_before_files;
+
+            if (toolAllowed && askBefore) {
+              return NextResponse.json({
+                type:   "tool_intent",
+                intent: {
+                  tool:   intent.tool,
+                  reason: intent.reason,
+                  query:  intent.query ?? null,
+                },
+              }, { status: 200, headers: { "Cache-Control": "no-store, private" } });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // If toolConsentOverride is provided, log the audit decision (allow_once) with policy_source
+  if (toolConsentOverride?.allowOnce && agentId) {
+    const agent = getAgent(agentId);
+    const policy = agent?.department ? getDepartmentPolicy(agent.department) : null;
+    const effective = agent ? resolveEffectiveAgentSettings(agent, policy) : null;
+    const isWebOrGmail = toolConsentOverride.tool === "web";
+    const policySource: "department" | "agent_override" =
+      effective
+        ? (isWebOrGmail ? (agent!.override_ask_before_web   ? "agent_override" : "department")
+                        : (agent!.override_ask_before_files  ? "agent_override" : "department"))
+        : "department";
+
+    logToolAudit({
+      conversation_id: typeof conversationId === "string" ? conversationId : "",
+      agent_id:        agentId,
+      tool:            toolConsentOverride.tool,
+      decision:        "allow_once",
+      reason:          "User allowed this tool for this request",
+      policy_source:   policySource,
+    });
+  }
+
+  // ── 4c. Gmail execution — inject results into messages when user approved ──
+  // When toolConsentOverride.tool === "gmail", call the MCP Gmail server and
+  // prepend a compact system context block so the model answers with live data.
+  // Consent logic and audit logging (above) are kept exactly as-is.
+  // ── 4d. Inject workspace context + agent system prompt ───────────────────
+  // Build a system message from ~/.openclaw/workspace/ files + agent.system_prompt.
+  // Agent's default_model overrides the client-supplied model when set.
+  let msgToSend = messages;
+  const agentRecord  = agentId ? getAgent(agentId) : null;
+  const agentPrompt  = agentRecord?.system_prompt?.trim() ?? "";
+  const resolvedModel = (agentRecord?.default_model?.trim() || model) as string;
+
+  const workspaceCtx = buildWorkspaceContext({ includeMemory: true, includeTools: true });
+  const systemContent = [workspaceCtx, agentPrompt].filter(Boolean).join("\n\n---\n\n");
+
+  if (systemContent) {
+    const hasSystem = (msgToSend as { role: string }[]).some((m) => m.role === "system");
+    if (!hasSystem) {
+      msgToSend = [{ role: "system", content: systemContent } as ChatMessage, ...msgToSend];
+    }
+  }
+
+  if (toolConsentOverride?.tool === "gmail" && toolConsentOverride.allowOnce) {
+    const lastUserMsg = messages.slice().reverse().find((m) => m.role === "user");
+    if (lastUserMsg?.content) {
+      const searchQuery = buildGmailQuery(lastUserMsg.content);
+      let gmailContext  = "";
+
+      try {
+        // ── MCP Gmail search ───────────────────────────────────────────────
+        const results = await gmailSearch({ q: searchQuery, maxResults: 5 });
+
+        if (results.length === 0) {
+          gmailContext =
+            `[GMAIL SEARCH — fetched live right now for query "${searchQuery}": ` +
+            `No matching emails found. Do not use email data from earlier in this conversation.]`;
+        } else {
+          // Each result already carries from / subject / date / snippet / id
+          const rows = results.map((r) =>
+            `From: ${r.from}\nSubject: ${r.subject}\nDate: ${r.date}\n` +
+            `Snippet: ${r.snippet.slice(0, 250)}\nID: ${r.id}`,
+          );
+          gmailContext =
+            `[GMAIL RESULTS — fetched live right now for query "${searchQuery}". ` +
+            `Answer using ONLY these emails; ignore any email data from earlier in this conversation.]\n\n` +
+            rows.join("\n\n---\n\n") +
+            `\n\n[END GMAIL RESULTS]`;
+        }
+
+        // Prepend Gmail context as a system message
+        msgToSend = [{ role: "system", content: gmailContext }, ...messages];
+
+      } catch (err) {
+        // ── MCP failure — return a clear error immediately; do NOT hallucinate ──
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[/api/openclaw/chat] Gmail MCP error: ${errMsg}`);
+
+        // Log the failure as a denied audit event
+        if (agentId) {
+          logToolAudit({
+            conversation_id: typeof conversationId === "string" ? conversationId : "",
+            agent_id:        agentId,
+            tool:            "gmail",
+            decision:        "deny",
+            reason:          `gmail_access_failed: ${errMsg.slice(0, 200)}`,
+            policy_source:   "department",
+          });
+        }
+
+        // Return a friendly, non-hallucinated assistant response
+        return NextResponse.json({
+          choices: [{
+            message: {
+              role:    "assistant",
+              content:
+                "I couldn't access Gmail right now. Please make sure the Gmail MCP server " +
+                "is running — run `npm run oauth` then `npm run dev` inside the mcp-gmail folder, " +
+                "and ensure MCP_GMAIL_ARGS is set in IQ Bandit's .env.local. Then try again.",
+            },
+          }],
+        }, { status: 200 });
+      }
+    }
+  }
+
   // ── 5. Shared logging setup ───────────────────────────────────────────────
   // startTime and promptChars are used in both the streaming and non-streaming
   // paths to populate the log entry.
   const startTime = Date.now();
-  const promptChars = countPromptChars(messages);
+  const promptChars = countPromptChars(msgToSend);
 
   // ── 6. STREAMING PATH ────────────────────────────────────────────────────
   // When the client sends { stream: true }, we pipe the raw SSE response from
@@ -244,8 +598,8 @@ export async function POST(request: NextRequest) {
     let gatewayResponse: Response;
     try {
       gatewayResponse = await chatCompletionStream({
-        model,
-        messages,
+        model: resolvedModel,
+        messages: msgToSend,
         temperature,
         max_tokens,
         stream: true,
@@ -356,15 +710,15 @@ export async function POST(request: NextRequest) {
   // chatCompletion() handles the gateway call and JSON parsing.
   try {
     const completion = await chatCompletion({
-      model,
-      messages,
+      model: resolvedModel,
+      messages: msgToSend,
       temperature,
       max_tokens,
       stream: false,
     });
 
-    const responseChars =
-      completion.choices?.[0]?.message?.content?.length ?? 0;
+    const assistantContent = completion.choices?.[0]?.message?.content ?? "";
+    const responseChars = assistantContent.length;
 
     logChatRequest({
       timestamp: new Date().toISOString(),
@@ -376,6 +730,33 @@ export async function POST(request: NextRequest) {
       prompt_chars: promptChars,
       response_chars: responseChars,
     });
+
+    // ── Conversation persistence ────────────────────────────────────────────
+    // Non-fatal: a DB failure here must never break the chat response.
+    if (conversationId && typeof conversationId === "string" && assistantContent) {
+      try {
+        // The last user-role message in the array is the new message just sent.
+        const lastUserMsg = messages.slice().reverse().find((m) => m.role === "user");
+
+        // Use upsertMessage (INSERT OR IGNORE) for the user turn so retries are safe.
+        const uid = typeof userMessageId === "string" && userMessageId.trim()
+          ? userMessageId.trim()
+          : randomUUID();
+        if (lastUserMsg) upsertMessage(uid, conversationId, "user", lastUserMsg.content);
+
+        // Assistant message is always fresh — generated once per successful response.
+        addMessage(conversationId, "assistant", assistantContent);
+
+        // Auto-title from the first user message (canonical helper — 42 chars max,
+        // only fires when title is still "New Chat").
+        if (lastUserMsg?.content) {
+          autoTitleFromFirstMessage(conversationId, lastUserMsg.content);
+        }
+        updateConversationMeta(conversationId, { model });
+      } catch {
+        console.error("[/api/openclaw/chat] conversation persistence failed (non-fatal)");
+      }
+    }
 
     return NextResponse.json(completion, { status: 200 });
   } catch (err) {

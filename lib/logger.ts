@@ -31,6 +31,8 @@ export interface ChatLogEntry {
   timestamp: string;
   /** Email from the session JWT — identifies who made the request */
   email: string;
+  /** Opaque user_id derived from email (u_<sha256 prefix>). "default" for legacy rows. */
+  user_id?: string;
   /** Model name sent by the client, e.g. "gpt-4o" */
   model: string;
   /** How long the full request took in milliseconds, including gateway round-trip */
@@ -103,6 +105,7 @@ function tryOpenSQLite(): BetterSQLiteDB | null {
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp      TEXT    NOT NULL,
         email          TEXT    NOT NULL,
+        user_id        TEXT    NOT NULL DEFAULT 'default',
         model          TEXT    NOT NULL,
         latency_ms     INTEGER NOT NULL,
         success        INTEGER NOT NULL,
@@ -111,6 +114,11 @@ function tryOpenSQLite(): BetterSQLiteDB | null {
         response_chars INTEGER NOT NULL
       )
     `);
+
+    // Idempotent migration — no-op if column already exists
+    try {
+      db.exec(`ALTER TABLE chat_requests ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default'`);
+    } catch { /* already present */ }
 
     console.log(`[logger] SQLite ready → ${DB_PATH}`);
     return db;
@@ -141,9 +149,9 @@ const db: BetterSQLiteDB | null = tryOpenSQLite();
 const insertStmt: BetterSQLiteStatement | null = db
   ? db.prepare(`
       INSERT INTO chat_requests
-        (timestamp, email, model, latency_ms, success, error_message, prompt_chars, response_chars)
+        (timestamp, email, user_id, model, latency_ms, success, error_message, prompt_chars, response_chars)
       VALUES
-        (@timestamp, @email, @model, @latency_ms, @success, @error_message, @prompt_chars, @response_chars)
+        (@timestamp, @email, @user_id, @model, @latency_ms, @success, @error_message, @prompt_chars, @response_chars)
     `)
   : null;
 
@@ -195,7 +203,7 @@ export function logChatRequest(entry: ChatLogEntry): void {
   if (db && insertStmt) {
     // SQLite path — convert boolean to integer (SQLite stores 0/1 for booleans)
     try {
-      insertStmt.run({ ...entry, success: entry.success ? 1 : 0 });
+      insertStmt.run({ ...entry, user_id: entry.user_id ?? "default", success: entry.success ? 1 : 0 });
     } catch (err) {
       // SQLite write failed (e.g. disk full). Try NDJSON as a last resort.
       console.error("[logger] SQLite insert failed, retrying with NDJSON:", err);
@@ -218,7 +226,7 @@ export function getRecentLogs(limit = 50): ChatLogEntry[] {
         `SELECT timestamp, email, model, latency_ms, success, error_message, prompt_chars, response_chars
          FROM chat_requests ORDER BY id DESC LIMIT ?`
       );
-      const rows = stmt.all(limit) as Array<ChatLogEntry & { success: number }>;
+      const rows = stmt.all(limit) as Array<Omit<ChatLogEntry, "success"> & { success: number }>;
       return rows.map((r) => ({ ...r, success: r.success === 1 }));
     } catch (err) {
       console.error("[logger] SQLite read failed:", err);
@@ -237,6 +245,83 @@ export function getRecentLogs(limit = 50): ChatLogEntry[] {
       .map((l) => JSON.parse(l) as ChatLogEntry);
   } catch (err) {
     console.error("[logger] NDJSON read failed:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Filtered query
+// ---------------------------------------------------------------------------
+
+/** Optional filters for getFilteredLogs(). All fields are optional. */
+export interface LogFilters {
+  /** Exact model name match, e.g. "gpt-4o". */
+  model?: string;
+  /** UTC calendar day in YYYY-MM-DD format. Matched via strftime('%Y-%m-%d', timestamp). */
+  date?: string;
+  /** 1 = successes only, 0 = errors only. Omit for both. */
+  success?: 0 | 1;
+}
+
+/**
+ * Returns up to `limit` log entries matching the given filters, newest first.
+ * All SQL values are parameterized — no injection risk.
+ * Never throws — returns [] on any failure.
+ *
+ * Date filtering uses SQLite's strftime('%Y-%m-%d', timestamp) which extracts
+ * the UTC date from ISO-8601 timestamps — consistent with analytics bucketing.
+ */
+export function getFilteredLogs(filters: LogFilters = {}, limit = 200): ChatLogEntry[] {
+  const conds: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.date) {
+    conds.push("strftime('%Y-%m-%d', timestamp) = ?");
+    params.push(filters.date);
+  }
+  if (filters.model) {
+    conds.push("model = ?");
+    params.push(filters.model);
+  }
+  if (filters.success !== undefined) {
+    conds.push("success = ?");
+    params.push(filters.success);
+  }
+
+  const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
+
+  if (db) {
+    try {
+      const rows = db
+        .prepare(
+          `SELECT timestamp, email, model, latency_ms, success, error_message, prompt_chars, response_chars
+           FROM chat_requests ${where} ORDER BY id DESC LIMIT ?`
+        )
+        .all(...params, limit) as Array<Omit<ChatLogEntry, "success"> & { success: number }>;
+      return rows.map((r) => ({ ...r, success: r.success === 1 }));
+    } catch (err) {
+      console.error("[logger] getFilteredLogs SQLite read failed:", err);
+    }
+  }
+
+  // NDJSON fallback — apply filters in JavaScript
+  try {
+    if (!fs.existsSync(NDJSON_PATH)) return [];
+    const lines = fs.readFileSync(NDJSON_PATH, "utf8").split("\n").filter(Boolean);
+    let entries = lines.reverse().map((l) => JSON.parse(l) as ChatLogEntry);
+    if (filters.date) {
+      // ISO-8601 starts with "YYYY-MM-DD" so startsWith is an accurate UTC date match
+      entries = entries.filter((e) => e.timestamp.startsWith(filters.date!));
+    }
+    if (filters.model) {
+      entries = entries.filter((e) => e.model === filters.model);
+    }
+    if (filters.success !== undefined) {
+      entries = entries.filter((e) => (e.success ? 1 : 0) === filters.success);
+    }
+    return entries.slice(0, limit);
+  } catch (err) {
+    console.error("[logger] getFilteredLogs NDJSON read failed:", err);
     return [];
   }
 }

@@ -14,6 +14,10 @@ export interface GatewaySettings {
   OPENCLAW_CHAT_PATH: string;
   STARTCLAW_CHAT_MODE: "openclaw" | "disabled";
   DEFAULT_MODEL: string;
+  /** Set to "true" once the setup wizard has been completed. */
+  SETUP_WIZARD_DONE?: string;
+  /** Provider preset ID (e.g. "openclaw", "openrouter"). Empty / absent = custom. */
+  PROVIDER_PRESET?: string;
 }
 
 const LOGS_DIR = path.resolve(process.cwd(), "logs");
@@ -67,6 +71,8 @@ export function getSettings(): GatewaySettings {
       OPENCLAW_CHAT_PATH:     stored.OPENCLAW_CHAT_PATH     ?? d.OPENCLAW_CHAT_PATH,
       STARTCLAW_CHAT_MODE:   (stored.STARTCLAW_CHAT_MODE as "openclaw" | "disabled") ?? d.STARTCLAW_CHAT_MODE,
       DEFAULT_MODEL:          stored.DEFAULT_MODEL          ?? d.DEFAULT_MODEL,
+      SETUP_WIZARD_DONE:      stored.SETUP_WIZARD_DONE,
+      PROVIDER_PRESET:        stored.PROVIDER_PRESET,
     };
   } catch {
     return d;

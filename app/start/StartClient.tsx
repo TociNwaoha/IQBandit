@@ -14,6 +14,7 @@ const CHANNELS = [
   {
     id: "officebuilding",
     label: "Office Building",
+    brandColor: "#FFFFFF",
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15M14.25 3.104c.251.023.501.05.75.082M19.8 15l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.607L5 14.5m14.8.5l-1.25 8.25M5 14.5l-1.25 8.25" />
@@ -23,6 +24,7 @@ const CHANNELS = [
   {
     id: "api",
     label: "API",
+    brandColor: "#61AFEF",
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
@@ -32,6 +34,7 @@ const CHANNELS = [
   {
     id: "discord",
     label: "Discord",
+    brandColor: "#5865F2",
     icon: (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
         <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z" />
@@ -41,6 +44,7 @@ const CHANNELS = [
   {
     id: "telegram",
     label: "Telegram",
+    brandColor: "#2AABEE",
     icon: (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
         <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.504-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
@@ -54,6 +58,31 @@ export function StartClient() {
   const [channel, setChannel] = useState("officebuilding");
 
   return (
+    <>
+    <style>{`
+      .start-btn-model {
+        transition: transform 0.14s ease, box-shadow 0.14s ease;
+      }
+      .start-btn-model:hover {
+        transform: translateY(-1px) scale(1.03);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+      }
+      .start-btn-model:active {
+        transform: translateY(0) scale(1);
+        box-shadow: none;
+      }
+      .start-btn-channel {
+        transition: transform 0.14s ease, box-shadow 0.14s ease;
+      }
+      .start-btn-channel:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 14px rgba(0,0,0,0.09);
+      }
+      .start-btn-channel:active {
+        transform: translateY(0);
+        box-shadow: none;
+      }
+    `}</style>
     <div
       className="w-full max-w-md mx-auto rounded-2xl p-6"
       style={{
@@ -76,7 +105,7 @@ export function StartClient() {
             <button
               key={m.id}
               onClick={() => setModel(m.id)}
-              className="rounded-xl px-2 py-2 text-xs font-medium transition-all"
+              className="start-btn-model rounded-xl px-2 py-2 text-xs font-medium"
               style={{
                 background: model === m.id ? "#1A1A17" : "#F0F0EC",
                 color: model === m.id ? "#F7F7F4" : "#6B6B60",
@@ -101,28 +130,27 @@ export function StartClient() {
           Which integration do you want to setup?
         </p>
         <div className="grid grid-cols-4 gap-2">
-          {CHANNELS.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setChannel(c.id)}
-              className="flex flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-medium transition-all"
-              style={{
-                background: channel === c.id ? "#F7F7F4" : "#F0F0EC",
-                color: channel === c.id ? "#1A1A17" : "#6B6B60",
-                border:
-                  channel === c.id
-                    ? "1px solid #E8E8E4"
-                    : "1px solid transparent",
-                boxShadow:
-                  channel === c.id
-                    ? "0 1px 3px rgba(0,0,0,0.08)"
-                    : "none",
-              }}
-            >
-              {c.icon}
-              {c.label}
-            </button>
-          ))}
+          {CHANNELS.map((c) => {
+            const sel = channel === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setChannel(c.id)}
+                className="start-btn-channel flex flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-medium"
+                style={{
+                  background: sel ? "#111111" : "#F0F0EC",
+                  color:      sel ? "#F0F0EC" : "#6B6B60",
+                  border:     sel ? "1px solid #2A2A2A" : "1px solid transparent",
+                  boxShadow:  sel ? "0 4px 14px rgba(0,0,0,0.22)" : "none",
+                }}
+              >
+                <span style={{ color: sel ? c.brandColor : "inherit" }}>
+                  {c.icon}
+                </span>
+                {c.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -186,5 +214,6 @@ export function StartClient() {
         Sign in to start your free trial.
       </p>
     </div>
+    </>
   );
 }

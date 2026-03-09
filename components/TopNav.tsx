@@ -9,6 +9,10 @@ import Link from "next/link";
 const NAV_ITEMS = [
   { label: "Marketplace", href: "/marketplace" },
   { label: "Office Building", href: "/officebuilding" },
+  { label: "Agents", href: "/agents" },
+  { label: "Integrations", href: "/integrations" },
+  { label: "Tool Logs", href: "/tool-logs" },
+  { label: "Mission Control", href: "/mission-control" },
   { label: "Settings", href: "/settings" },
 ];
 
