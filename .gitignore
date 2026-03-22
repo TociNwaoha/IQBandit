@@ -137,3 +137,6 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# One-time setup scripts (contain Stripe API logic — do not commit)
+scripts/stripe-setup.ts

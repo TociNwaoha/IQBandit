@@ -130,7 +130,10 @@ export function AgentCard({ agent }: { agent: Agent }) {
   const theme = CATEGORY_THEMES[agent.category] ?? FALLBACK_THEME;
 
   return (
-    <div className="group relative bg-white border border-gray-200 rounded-2xl p-5 flex flex-col gap-4 hover:border-gray-300 hover:shadow-md transition-all duration-200 cursor-pointer">
+    <div
+      className="group relative rounded-2xl p-5 flex flex-col gap-4 transition-all duration-200 cursor-pointer"
+      style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border)" }}
+    >
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5">
@@ -146,7 +149,10 @@ export function AgentCard({ agent }: { agent: Agent }) {
             {theme.icon}
           </div>
           {/* Category pill */}
-          <span className="text-[11px] font-medium text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-2.5 py-0.5 leading-tight">
+          <span
+            className="text-[11px] font-medium rounded-full px-2.5 py-0.5 leading-tight"
+            style={{ color: "var(--color-text-muted)", background: "var(--color-bg-surface-2)", border: "1px solid var(--color-border)" }}
+          >
             {agent.category}
           </span>
         </div>
@@ -167,16 +173,16 @@ export function AgentCard({ agent }: { agent: Agent }) {
 
       {/* Body */}
       <div className="flex-1">
-        <h3 className="text-sm font-semibold text-gray-900 group-hover:text-violet-700 transition-colors">
+        <h3 className="text-sm font-semibold transition-colors" style={{ color: "var(--color-text-primary)" }}>
           {agent.name}
         </h3>
-        <p className="text-xs text-gray-500 mt-1.5 leading-relaxed line-clamp-2">
+        <p className="text-xs mt-1.5 leading-relaxed line-clamp-2" style={{ color: "var(--color-text-muted)" }}>
           {agent.description}
         </p>
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+      <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid var(--color-border)" }}>
         {/* Rating */}
         <div className="flex items-center gap-1">
           <svg
@@ -185,14 +191,14 @@ export function AgentCard({ agent }: { agent: Agent }) {
           >
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
           </svg>
-          <span className="text-xs font-semibold text-gray-700">
+          <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>
             {agent.rating.toFixed(1)}
           </span>
         </div>
 
         {/* Price + CTA */}
         <div className="flex items-center gap-2.5">
-          <span className="text-xs font-semibold text-gray-900">
+          <span className="text-xs font-semibold" style={{ color: "var(--color-text-primary)" }}>
             {agent.price}
           </span>
           <span className="text-xs font-medium text-violet-600 group-hover:text-violet-700 group-hover:underline transition-colors">

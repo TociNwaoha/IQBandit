@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // Next.js bundles server code with webpack, which cannot process native binaries.
   // This tells Next.js to leave the require("better-sqlite3") call as-is at runtime
   // instead of trying to bundle it. Without this, SQLite logging fails at startup.
-  serverExternalPackages: ["better-sqlite3"],
+  serverExternalPackages: ["better-sqlite3", "ssh2"],
 };
 
 export default nextConfig;

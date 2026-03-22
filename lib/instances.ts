@@ -9,10 +9,11 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import type { PlanId } from "@/lib/plans";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
-export type InstanceTier   = "starter" | "pro";
+export type InstanceTier   = PlanId;
 export type InstanceStatus =
   | "provisioning"
   | "running"
@@ -25,6 +26,7 @@ export interface Instance {
   id: string;
   user_id: string;
   tier: InstanceTier;
+  plan: PlanId;
   status: InstanceStatus;
   container_name: string | null;
   host_port: number | null;
@@ -56,7 +58,8 @@ function tryOpenDB(): BetterSQLiteDB | null {
       CREATE TABLE IF NOT EXISTS instances (
         id                  TEXT PRIMARY KEY,
         user_id             TEXT NOT NULL,
-        tier                TEXT NOT NULL DEFAULT 'starter',
+        tier                TEXT NOT NULL DEFAULT 'free',
+        plan                TEXT NOT NULL DEFAULT 'free',
         status              TEXT NOT NULL DEFAULT 'provisioning',
         container_name      TEXT,
         host_port           INTEGER,
@@ -74,6 +77,14 @@ function tryOpenDB(): BetterSQLiteDB | null {
       CREATE INDEX IF NOT EXISTS idx_instances_container_name
         ON instances(container_name);
     `);
+
+    // Migrate existing DBs: add plan column if it doesn't exist yet
+    try {
+      db.exec(`ALTER TABLE instances ADD COLUMN plan TEXT DEFAULT 'free'`);
+    } catch {
+      // Column already exists — safe to ignore
+    }
+
     return db;
   } catch (err) {
     console.error("[instances] Failed to open DB:", err);
@@ -139,17 +150,18 @@ export function createInstance(
   try {
     db.prepare(
       `INSERT INTO instances
-         (id, user_id, tier, status, container_name, host_port, gateway_token,
+         (id, user_id, tier, plan, status, container_name, host_port, gateway_token,
           subdomain, openclaw_url, contabo_instance_id, ip_address, cancelled_at,
           created_at, updated_at)
        VALUES
-         (@id, @user_id, @tier, @status, @container_name, @host_port, @gateway_token,
+         (@id, @user_id, @tier, @plan, @status, @container_name, @host_port, @gateway_token,
           @subdomain, @openclaw_url, @contabo_instance_id, @ip_address, @cancelled_at,
           @created_at, @updated_at)`
     ).run({
       id,
       user_id:             data.user_id,
       tier:                data.tier,
+      plan:                data.plan,
       status:              data.status,
       container_name:      data.container_name ?? null,
       host_port:           data.host_port ?? null,

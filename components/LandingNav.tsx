@@ -10,10 +10,10 @@ export function LandingNav() {
     <nav
       className="fixed top-0 left-0 right-0 z-50"
       style={{
-        background: "rgba(247,247,244,0.92)",
+        background: "color-mix(in srgb, var(--color-bg-base) 92%, transparent)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid #E8E8E4",
+        borderBottom: "1px solid var(--color-border)",
       }}
     >
       <div className="max-w-5xl mx-auto px-6 flex items-center justify-between h-14">
@@ -21,7 +21,7 @@ export function LandingNav() {
         <Link href="/" className="flex items-center gap-2">
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: "#1A1A17" }}
+            style={{ background: "var(--color-text-primary)" }}
           >
             <span className="text-white font-bold" style={{ fontSize: "10px" }}>
               IQ
@@ -29,7 +29,7 @@ export function LandingNav() {
           </div>
           <span
             className="text-sm font-semibold tracking-tight"
-            style={{ color: "#1A1A17" }}
+            style={{ color: "var(--color-text-primary)" }}
           >
             IQBANDIT
           </span>
@@ -41,8 +41,8 @@ export function LandingNav() {
             <a
               key={label}
               href={`#${label.toLowerCase()}`}
-              className="text-sm transition-colors hover:text-[#1A1A17]"
-              style={{ color: "#6B6B60" }}
+              className="text-sm transition-colors"
+              style={{ color: "var(--color-text-secondary)" }}
             >
               {label}
             </a>
@@ -53,22 +53,22 @@ export function LandingNav() {
         <div className="flex items-center gap-2">
           <Link
             href="/login"
-            className="hidden md:block text-sm px-3.5 py-1.5 rounded-lg transition-colors hover:text-[#1A1A17]"
-            style={{ color: "#6B6B60" }}
+            className="hidden md:block text-sm px-3.5 py-1.5 rounded-lg transition-colors"
+            style={{ color: "var(--color-text-secondary)" }}
           >
             Sign in
           </Link>
           <Link
             href="/start"
             className="text-sm px-3.5 py-1.5 rounded-lg font-medium transition-colors"
-            style={{ background: "#1A1A17", color: "#F7F7F4" }}
+            style={{ background: "var(--color-text-primary)", color: "var(--color-bg-base)" }}
           >
             Get started
           </Link>
           {/* Mobile menu toggle */}
           <button
             className="md:hidden ml-1 p-1.5 rounded-lg"
-            style={{ color: "#6B6B60" }}
+            style={{ color: "var(--color-text-secondary)" }}
             onClick={() => setOpen((v) => !v)}
             aria-label="Toggle menu"
           >
@@ -101,14 +101,14 @@ export function LandingNav() {
       {open && (
         <div
           className="md:hidden px-6 pb-4 flex flex-col gap-3"
-          style={{ borderTop: "1px solid #E8E8E4" }}
+          style={{ borderTop: "1px solid var(--color-border)" }}
         >
           {["Features", "Pricing", "FAQ"].map((label) => (
             <a
               key={label}
               href={`#${label.toLowerCase()}`}
               className="text-sm py-1"
-              style={{ color: "#6B6B60" }}
+              style={{ color: "var(--color-text-secondary)" }}
               onClick={() => setOpen(false)}
             >
               {label}
@@ -117,7 +117,7 @@ export function LandingNav() {
           <Link
             href="/login"
             className="text-sm py-1"
-            style={{ color: "#6B6B60" }}
+            style={{ color: "var(--color-text-secondary)" }}
           >
             Sign in
           </Link>

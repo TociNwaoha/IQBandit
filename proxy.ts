@@ -39,8 +39,8 @@ const SETUP_GATED_PATHS = [
   "/mission-control",
 ];
 
-// If authenticated user hits /login, bounce them to /marketplace
-const AUTH_PATHS = ["/login"];
+// If authenticated user hits /login or /signup, bounce them to /dashboard
+const AUTH_PATHS = ["/login", "/signup"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -65,8 +65,8 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isAuthPage && session) {
-    // Already authenticated — skip login page, go to marketplace
-    return NextResponse.redirect(new URL("/marketplace", request.url));
+    // Already authenticated — skip login/signup page, go to dashboard
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   // If authenticated but setup not yet done, redirect to the setup wizard.

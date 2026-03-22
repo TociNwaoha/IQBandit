@@ -49,16 +49,16 @@ const INFO_CODES = new Set([
 // ─── Palette constants ────────────────────────────────────────────────────────
 
 const P = {
-  bg: "#F7F7F4",
-  card: "#FFFFFF",
-  muted: "#F0F0EC",
-  fg: "#1A1A17",
-  fgHover: "#333330",
-  fgLight: "#F7F7F4",
-  border: "#E8E8E4",
-  sub: "#6B6B60",
-  placeholder: "#A8A89C",
-  dark: "#0C0B09",
+  bg:          "var(--color-bg-base)",
+  card:        "var(--color-bg-surface)",
+  muted:       "var(--color-bg-surface-2)",
+  fg:          "var(--color-text-primary)",
+  fgHover:     "var(--color-text-primary)",
+  fgLight:     "var(--color-bg-base)",
+  border:      "var(--color-border)",
+  sub:         "var(--color-text-secondary)",
+  placeholder: "var(--color-text-muted)",
+  dark:        "var(--color-bg-base)",
 } as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ function ConversationSidebar({
           <div
             onMouseDown={(e) => e.stopPropagation()}
             style={{
-              background: "#fff",
+              background: "var(--color-bg-surface)",
               border: `1px solid ${P.border}`,
               borderRadius: 12,
               boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
@@ -510,7 +510,7 @@ function ConversationSidebar({
                   borderRadius: 7,
                   border: "none",
                   background: P.fg,
-                  color: "#F7F7F4",
+                  color: P.fgLight,
                   cursor: "pointer",
                 }}
               >
@@ -538,7 +538,7 @@ function ConversationSidebar({
           <div
             onMouseDown={(e) => e.stopPropagation()}
             style={{
-              background: "#fff",
+              background: "var(--color-bg-surface)",
               border: `1px solid ${P.border}`,
               borderRadius: 12,
               boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
@@ -606,7 +606,7 @@ function ConversationSidebar({
               top: openMenu.top,
               left: openMenu.left,
               zIndex: 500,
-              background: "#fff",
+              background: "var(--color-bg-surface)",
               border: `1px solid ${P.border}`,
               borderRadius: 8,
               boxShadow: "0 4px 18px rgba(0,0,0,0.14)",

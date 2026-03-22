@@ -4,8 +4,10 @@
  * Mirrors StartClaw design adapted for IQBANDIT.
  */
 
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LandingNav } from "@/components/LandingNav";
+import { getSessionFromCookies } from "@/lib/auth";
 
 /* ─── Data ──────────────────────────────────────────────────── */
 
@@ -231,7 +233,11 @@ function ArrowIcon() {
 
 /* ─── Page ───────────────────────────────────────────────────── */
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // Redirect authenticated users to dashboard
+  const session = await getSessionFromCookies().catch(() => null);
+  if (session) redirect("/dashboard");
+
   return (
     <div
       className="min-h-screen"

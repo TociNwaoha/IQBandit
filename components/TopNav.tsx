@@ -1,15 +1,18 @@
+"use client";
+
 /**
  * components/TopNav.tsx
  * Sticky top navigation for all authenticated pages.
- * Server Component — the logout button is a native form POST, no JS needed.
+ * Theme-aware: uses CSS variables for light/dark mode support.
  */
 
 import Link from "next/link";
+import { useState } from "react";
 
 const NAV_ITEMS = [
   { label: "Marketplace", href: "/marketplace" },
   { label: "Office Building", href: "/officebuilding" },
-  { label: "Agents", href: "/agents" },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Integrations", href: "/integrations" },
   { label: "Tool Logs", href: "/tool-logs" },
   { label: "Mission Control", href: "/mission-control" },
@@ -21,23 +24,52 @@ interface TopNavProps {
   email: string;
 }
 
-export function TopNav({ activePath, email }: TopNavProps) {
+function NavLink({ label, href, isActive }: { label: string; href: string; isActive: boolean }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-100">
+    <Link
+      href={href}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: "6px 12px",
+        borderRadius: 8,
+        fontSize: 14,
+        fontWeight: 500,
+        textDecoration: "none",
+        transition: "background 0.15s, color 0.15s",
+        background: isActive || hovered ? "var(--color-bg-surface-2)" : "transparent",
+        color: isActive || hovered ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+      }}
+    >
+      {label}
+    </Link>
+  );
+}
+
+export function TopNav({ activePath, email }: TopNavProps) {
+  const [signOutHovered, setSignOutHovered] = useState(false);
+
+  return (
+    <header
+      className="sticky top-0 z-20 backdrop-blur-sm"
+      style={{
+        background: "color-mix(in srgb, var(--color-bg-surface) 95%, transparent)",
+        borderBottom: "1px solid var(--color-border)",
+      }}
+    >
       <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-6">
         {/* Brand + nav */}
         <div className="flex items-center gap-8 min-w-0">
           {/* Logo */}
-          <Link
-            href="/"
-            className="flex items-center gap-2 shrink-0"
-          >
+          <Link href="/" className="flex items-center gap-2 shrink-0">
             <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center">
-              <span className="text-white text-xs font-bold tracking-tight">
-                IQ
-              </span>
+              <span className="text-white text-xs font-bold tracking-tight">IQ</span>
             </div>
-            <span className="text-sm font-semibold text-gray-900 hidden sm:block">
+            <span
+              className="text-sm font-semibold hidden sm:block"
+              style={{ color: "var(--color-text-primary)" }}
+            >
               IQBANDIT
             </span>
           </Link>
@@ -45,30 +77,40 @@ export function TopNav({ activePath, email }: TopNavProps) {
           {/* Nav links */}
           <nav className="hidden md:flex items-center gap-0.5">
             {NAV_ITEMS.map((item) => (
-              <Link
+              <NavLink
                 key={item.label}
+                label={item.label}
                 href={item.href}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  activePath === item.href
-                    ? "text-gray-900 bg-gray-100"
-                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-                }`}
-              >
-                {item.label}
-              </Link>
+                isActive={activePath === item.href}
+              />
             ))}
           </nav>
         </div>
 
         {/* Right side */}
         <div className="flex items-center gap-3 shrink-0">
-          <span className="hidden lg:block text-xs text-gray-400 max-w-[180px] truncate">
+          <span
+            className="hidden lg:block text-xs max-w-[180px] truncate"
+            style={{ color: "var(--color-text-muted)" }}
+          >
             {email}
           </span>
           <form action="/api/auth/logout" method="POST">
             <button
               type="submit"
-              className="text-xs font-medium text-gray-500 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all"
+              onMouseEnter={() => setSignOutHovered(true)}
+              onMouseLeave={() => setSignOutHovered(false)}
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: signOutHovered ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                padding: "6px 12px",
+                borderRadius: 8,
+                border: `1px solid ${signOutHovered ? "var(--color-border-hover)" : "var(--color-border)"}`,
+                background: signOutHovered ? "var(--color-bg-surface-2)" : "transparent",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
             >
               Sign out
             </button>

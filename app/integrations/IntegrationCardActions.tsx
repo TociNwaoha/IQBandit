@@ -11,43 +11,8 @@
  */
 
 import { useState } from "react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import type { ConnectionMethod } from "@/lib/integrations/providerRegistry";
-
-// ─── styles ───────────────────────────────────────────────────────────────────
-
-const INPUT: React.CSSProperties = {
-  width: "100%",
-  padding: "5px 8px",
-  fontFamily: "monospace",
-  fontSize: "12px",
-  border: "1px solid #e8e8e4",
-  borderRadius: "5px",
-  background: "#fff",
-  color: "#1a1a17",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const BTN = (primary: boolean, danger = false): React.CSSProperties => ({
-  padding: "4px 10px",
-  fontFamily: "monospace",
-  fontSize: "11px",
-  fontWeight: 600,
-  borderRadius: "5px",
-  cursor: danger ? "pointer" : primary ? "pointer" : "pointer",
-  border: primary ? "none" : danger ? "1px solid #fca5a5" : "1px solid #e8e8e4",
-  background: primary ? "#1a1a17" : danger ? "#fef2f2" : "#fff",
-  color: primary ? "#fff" : danger ? "#991b1b" : "#6b6b60",
-  opacity: 1,
-});
-
-const BTN_DISABLED: React.CSSProperties = {
-  ...BTN(false),
-  opacity: 0.45,
-  cursor: "not-allowed",
-};
-
-// ─── component ────────────────────────────────────────────────────────────────
 
 type Mode = "idle" | "form" | "saving" | "disconnecting";
 
@@ -56,11 +21,6 @@ interface Props {
   connectionMethod: ConnectionMethod;
   hasConnection: boolean;
   credentialLabel?: string;
-  /**
-   * When provided for an oauth_redirect provider, renders an active "Connect via OAuth"
-   * link instead of the disabled placeholder stub.  Should be the absolute-path start
-   * URL, e.g. "/api/integrations/oauth/notion/start".
-   */
   oauthStartUrl?: string;
 }
 
@@ -71,10 +31,10 @@ export function IntegrationCardActions({
   credentialLabel = "API Key",
   oauthStartUrl,
 }: Props) {
-  const [mode, setMode] = useState<Mode>("idle");
-  const [keyValue, setKeyValue] = useState("");
+  const [mode, setMode]           = useState<Mode>("idle");
+  const [keyValue, setKeyValue]   = useState("");
   const [labelValue, setLabelValue] = useState("");
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr]             = useState<string | null>(null);
 
   // ── connect (api_key_form) ─────────────────────────────────────────────────
 
@@ -87,18 +47,16 @@ export function IntegrationCardActions({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider_id: providerId,
-          auth_type: "api_key",
-          access_token: keyValue.trim(),
+          provider_id:   providerId,
+          auth_type:     "api_key",
+          access_token:  keyValue.trim(),
           account_label: labelValue.trim() || providerId,
         }),
       });
       if (res.ok) {
         window.location.reload();
       } else {
-        const data = (await res.json().catch(() => ({ error: "Save failed" }))) as {
-          error?: string;
-        };
+        const data = (await res.json().catch(() => ({ error: "Save failed" }))) as { error?: string };
         setErr(data.error ?? "Save failed");
         setMode("form");
       }
@@ -122,9 +80,7 @@ export function IntegrationCardActions({
       if (res.ok) {
         window.location.reload();
       } else {
-        const data = (await res.json().catch(() => ({ error: "Disconnect failed" }))) as {
-          error?: string;
-        };
+        const data = (await res.json().catch(() => ({ error: "Disconnect failed" }))) as { error?: string };
         setErr(data.error ?? "Disconnect failed");
         setMode("idle");
       }
@@ -136,78 +92,56 @@ export function IntegrationCardActions({
 
   // ── render ─────────────────────────────────────────────────────────────────
 
-  // Always-present disconnect button when connected
-  const disconnectBtn = hasConnection && (
-    <button
-      onClick={handleDisconnect}
-      disabled={mode === "disconnecting"}
-      style={mode === "disconnecting" ? BTN_DISABLED : BTN(false, true)}
-    >
-      {mode === "disconnecting" ? "…" : "Disconnect"}
-    </button>
-  );
-
   // api_key_form: inline form flow
   if (connectionMethod === "api_key_form" && !hasConnection) {
     if (mode === "idle") {
       return (
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <button onClick={() => setMode("form")} style={BTN(true)}>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMode("form")}
+            className="px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-xs font-medium text-white transition-colors"
+          >
             Connect
           </button>
-          {err && <span style={{ fontSize: "11px", color: "#991b1b" }}>{err}</span>}
+          {err && <span className="text-xs text-red-600">{err}</span>}
         </div>
       );
     }
 
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "5px",
-          width: "100%",
-        }}
-      >
+      <div className="flex flex-col gap-2 w-full mt-1">
         <input
           type="text"
           placeholder="Label (e.g. My Account)"
           value={labelValue}
           onChange={(e) => setLabelValue(e.target.value)}
-          style={INPUT}
+          className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 transition-all"
         />
         <input
           type="password"
           placeholder={credentialLabel}
           value={keyValue}
           onChange={(e) => setKeyValue(e.target.value)}
-          style={INPUT}
           autoComplete="new-password"
           onKeyDown={(e) => {
             if (e.key === "Enter") handleSave();
-            if (e.key === "Escape") {
-              setMode("idle");
-              setErr(null);
-            }
+            if (e.key === "Escape") { setMode("idle"); setErr(null); }
           }}
+          className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-900 font-mono placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 transition-all"
         />
-        {err && (
-          <span style={{ fontSize: "11px", color: "#991b1b" }}>{err}</span>
-        )}
-        <div style={{ display: "flex", gap: "5px" }}>
+        {err && <p className="text-xs text-red-600">{err}</p>}
+        <div className="flex gap-2">
           <button
             onClick={handleSave}
             disabled={!keyValue.trim() || mode === "saving"}
-            style={!keyValue.trim() || mode === "saving" ? BTN_DISABLED : BTN(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium text-white transition-colors"
           >
+            {mode === "saving" && <Loader2 size={12} className="animate-spin" />}
             {mode === "saving" ? "Saving…" : "Save"}
           </button>
           <button
-            onClick={() => {
-              setMode("idle");
-              setErr(null);
-            }}
-            style={BTN(false)}
+            onClick={() => { setMode("idle"); setErr(null); }}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 text-xs text-gray-500 hover:text-gray-700 transition-colors"
           >
             Cancel
           </button>
@@ -216,27 +150,28 @@ export function IntegrationCardActions({
     );
   }
 
-  // oauth_redirect: active link when oauthStartUrl is wired up; disabled stub otherwise
+  // oauth_redirect: active link when oauthStartUrl provided; disabled stub otherwise
   if (connectionMethod === "oauth_redirect" && !hasConnection) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <div className="flex items-center gap-2">
         {oauthStartUrl ? (
           <a
             href={oauthStartUrl}
-            style={{ ...BTN(true), textDecoration: "none", display: "inline-block" }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-xs font-medium text-white transition-colors"
           >
             Connect via OAuth
+            <ExternalLink size={10} />
           </a>
         ) : (
           <button
             disabled
             title="OAuth connection flow coming soon"
-            style={BTN_DISABLED}
+            className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs font-medium text-gray-400 cursor-not-allowed"
           >
             Connect via OAuth
           </button>
         )}
-        {err && <span style={{ fontSize: "11px", color: "#991b1b" }}>{err}</span>}
+        {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
     );
   }
@@ -244,25 +179,39 @@ export function IntegrationCardActions({
   // webhook_inbound: placeholder
   if (connectionMethod === "webhook_inbound" && !hasConnection) {
     return (
-      <button disabled title="Webhook URL setup coming soon" style={BTN_DISABLED}>
+      <button
+        disabled
+        title="Webhook URL setup coming soon"
+        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs font-medium text-gray-400 cursor-not-allowed"
+      >
         Configure Webhook
       </button>
     );
   }
 
-  // Connected state — just show disconnect (all methods)
+  // Connected state — show disconnect
   if (hasConnection) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-        {disconnectBtn}
-        {err && <span style={{ fontSize: "11px", color: "#991b1b" }}>{err}</span>}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleDisconnect}
+          disabled={mode === "disconnecting"}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs text-red-600 hover:text-red-700 transition-colors"
+        >
+          {mode === "disconnecting" && <Loader2 size={12} className="animate-spin" />}
+          {mode === "disconnecting" ? "Disconnecting…" : "Disconnect"}
+        </button>
+        {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
     );
   }
 
   // Fallback (manual / unknown method)
   return (
-    <button disabled style={BTN_DISABLED}>
+    <button
+      disabled
+      className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs font-medium text-gray-400 cursor-not-allowed"
+    >
       Connect
     </button>
   );

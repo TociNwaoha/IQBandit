@@ -21,6 +21,8 @@ function getSecretKey(): Uint8Array {
 export interface SessionPayload {
   email: string;
   isAdmin: boolean;
+  userId?: string;
+  name?: string;
 }
 
 /** Creates a signed JWT and sets it as an httpOnly cookie on a NextResponse */

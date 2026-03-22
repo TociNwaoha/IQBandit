@@ -41,14 +41,14 @@ interface ToolsResponse {
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
 const P = {
-  bg:          "#F7F7F4",
-  card:        "#FFFFFF",
-  muted:       "#F0F0EC",
-  fg:          "#1A1A17",
-  fgLight:     "#F7F7F4",
-  border:      "#E8E8E4",
-  sub:         "#6B6B60",
-  placeholder: "#A8A89C",
+  bg:          "var(--color-bg-base)",
+  card:        "var(--color-bg-surface)",
+  muted:       "var(--color-bg-surface-2)",
+  fg:          "var(--color-text-primary)",
+  fgLight:     "var(--color-bg-base)",
+  border:      "var(--color-border)",
+  sub:         "var(--color-text-secondary)",
+  placeholder: "var(--color-text-muted)",
 } as const;
 
 // ─── Result helpers ───────────────────────────────────────────────────────────

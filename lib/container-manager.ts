@@ -7,6 +7,7 @@
 
 import { runCommand } from "@/lib/ssh";
 import { getPortsInUse } from "@/lib/instances";
+import { getPlanLimits, type PlanId } from "@/lib/plans";
 
 // ─── port allocation ──────────────────────────────────────────────────────────
 
@@ -38,22 +39,26 @@ export async function ensureDataDirs(userId: string): Promise<void> {
 
 /**
  * Starts a new OpenClaw container for the given user.
+ * Resource limits (memory, CPUs, storage) are derived from the user's plan.
  * Assumes ensureDataDirs has already been called.
  */
 export async function createUserContainer(
   userId: string,
   gatewayToken: string,
-  hostPort: number
+  hostPort: number,
+  planId: PlanId
 ): Promise<void> {
-  const name = `openclaw-user-${userId}`;
-  const base = `/home/iqbandit/users/${userId}`;
+  const name   = `openclaw-user-${userId}`;
+  const base   = `/home/iqbandit/users/${userId}`;
+  const limits = getPlanLimits(planId);
 
   const cmd = [
     "docker run -d",
     `--name ${name}`,
     `--network iqbandit-network`,
-    `--memory="768m"`,
-    `--cpus="0.75"`,
+    `--memory="${limits.memory}"`,
+    `--cpus="${limits.cpus}"`,
+    `--storage-opt size=${limits.storage}`,
     `--restart unless-stopped`,
     `-e OPENCLAW_GATEWAY_TOKEN=${gatewayToken}`,
     `-e OPENCLAW_SKIP_ONBOARD=true`,

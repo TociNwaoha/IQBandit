@@ -22,6 +22,14 @@ import {
   ensureDataDirs,
   createUserContainer,
 } from "@/lib/container-manager";
+import { installDefaultSkills } from "@/lib/skill-installer";
+import { type PlanId } from "@/lib/plans";
+
+const VALID_PLAN_IDS: readonly PlanId[] = ["free", "starter", "pro", "bandit_plus"];
+
+function isPlanId(value: unknown): value is PlanId {
+  return VALID_PLAN_IDS.includes(value as PlanId);
+}
 
 // ─── POST — provision ─────────────────────────────────────────────────────────
 
@@ -31,12 +39,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const userId = getCurrentUserIdFromSession(session);
 
-  let tier: "starter" | "pro" = "starter";
+  let plan: PlanId = "free";
   try {
     const body = await request.json();
-    if (body.tier === "pro") tier = "pro";
+    if (isPlanId(body.plan)) plan = body.plan;
   } catch {
-    // body is optional
+    // body is optional — default to free
   }
 
   // Guard: no double-provisioning
@@ -54,8 +62,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Cryptographically random gateway token (64 hex chars)
   const gatewayToken = randomBytes(32).toString("hex");
 
-  // ── Starter tier ────────────────────────────────────────────────────────────
-  if (tier === "starter") {
+  // ── Free / Starter tier — Docker container on shared VPS ────────────────────
+  if (plan === "free" || plan === "starter") {
     const vpsHost = process.env.VPS_HOST;
     if (!vpsHost) {
       return NextResponse.json(
@@ -64,12 +72,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const hostPort = allocatePort();
+    const hostPort      = allocatePort();
     const containerName = `openclaw-user-${userId}`;
 
     try {
       await ensureDataDirs(userId);
-      await createUserContainer(userId, gatewayToken, hostPort);
+      await createUserContainer(userId, gatewayToken, hostPort, plan);
     } catch (err) {
       console.error("[provision] Docker error:", err);
       return NextResponse.json(
@@ -82,7 +90,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const instance = createInstance({
       user_id:             userId,
-      tier:                "starter",
+      tier:                plan,
+      plan,
       status:              "running",
       container_name:      containerName,
       host_port:           hostPort,
@@ -101,6 +110,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // Install default skills into the user's workspace (non-blocking)
+    installDefaultSkills(userId).catch((err) => {
+      console.error("[provision] installDefaultSkills failed:", err);
+    });
+
     return NextResponse.json(
       {
         success: true,
@@ -113,12 +127,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Pro tier ────────────────────────────────────────────────────────────────
+  // ── Pro / Bandit Plus tier — dedicated Contabo VPS ──────────────────────────
   // TODO: call Contabo VPS API to provision a dedicated instance
   // See lib/contabo.ts — createVPS(), waitForVPSReady()
   const instance = createInstance({
     user_id:             userId,
-    tier:                "pro",
+    tier:                plan,
+    plan,
     status:              "provisioning",
     container_name:      null,
     host_port:           null,

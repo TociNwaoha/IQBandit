@@ -17,13 +17,13 @@ import type { ToolSuggestion } from "./toolSuggester";
 // ─── Palette (matches OfficeBuildingClient) ───────────────────────────────────
 
 const P = {
-  bg:          "#F7F7F4",
-  card:        "#FFFFFF",
-  border:      "#E8E8E4",
-  fg:          "#1A1A17",
-  sub:         "#6B6B60",
-  placeholder: "#A8A89C",
-  muted:       "#F0F0EC",
+  bg:          "var(--color-bg-base)",
+  card:        "var(--color-bg-surface)",
+  border:      "var(--color-border)",
+  fg:          "var(--color-text-primary)",
+  sub:         "var(--color-text-secondary)",
+  placeholder: "var(--color-text-muted)",
+  muted:       "var(--color-bg-surface-2)",
 } as const;
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -480,7 +480,7 @@ export function ToolSuggestionCard({ suggestion, onDismiss, onInsert, conversati
               borderRadius:   6,
               border:         "none",
               background:     running ? P.muted : P.fg,
-              color:          running ? P.placeholder : "#F7F7F4",
+              color:          running ? P.placeholder : "var(--color-bg-base)",
               fontSize:       11,
               fontWeight:     600,
               cursor:         running ? "not-allowed" : "pointer",

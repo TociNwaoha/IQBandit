@@ -21,7 +21,7 @@ export default async function OfficeBuildingPage() {
   return (
     // h-screen + overflow-hidden keeps the page from scrolling;
     // OfficeBuildingClient handles its own internal scroll
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "#F7F7F4" }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "var(--color-bg-base)" }}>
       <TopNav activePath="/officebuilding" email={session.email} />
       <div className="flex-1 overflow-hidden">
         <OfficeBuildingClient chatMode={chatMode} defaultModel={defaultModel} />
