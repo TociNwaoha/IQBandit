@@ -27,9 +27,12 @@ import {
   createUserContainer,
   pauseUserContainer,
   resumeUserContainer,
+  type UserLLMConfig,
 } from "@/lib/container-manager";
 import { installDefaultSkills } from "@/lib/skill-installer";
 import { getPlanLimits, type PlanId } from "@/lib/plans";
+import { getUserById } from "@/lib/user-db";
+import { decrypt } from "@/lib/crypto";
 import { runCommand } from "@/lib/ssh";
 
 const VALID_PLANS: readonly string[] = ["free", "starter", "pro", "bandit_plus"];
@@ -139,9 +142,17 @@ async function handleCheckoutCompleted(
     const hostPort = allocatePort();
     const containerName = `openclaw-user-${userId}`;
 
+    const stripeUser = getUserById(userId);
+    const userConfig: UserLLMConfig = {
+      model_mode: (stripeUser?.model_mode ?? "banditlm") as "banditlm" | "byok",
+      byok_api_key: stripeUser?.byok_api_key ? decrypt(stripeUser.byok_api_key) : undefined,
+      byok_base_url: stripeUser?.byok_base_url ?? undefined,
+      byok_model_id: stripeUser?.byok_model_id ?? undefined,
+    };
+
     try {
       await ensureDataDirs(userId);
-      await createUserContainer(userId, gatewayToken, hostPort, safeplan);
+      await createUserContainer(userId, gatewayToken, hostPort, safeplan, userConfig);
     } catch (err) {
       console.error("[stripe/webhook] checkout.session.completed: Docker error:", err);
       return;
