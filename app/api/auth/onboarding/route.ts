@@ -16,9 +16,12 @@ import {
   allocatePort,
   ensureDataDirs,
   createUserContainer,
+  type UserLLMConfig,
 } from "@/lib/container-manager";
 import { installDefaultSkills } from "@/lib/skill-installer";
 import type { PlanId } from "@/lib/plans";
+import { getUserById } from "@/lib/user-db";
+import { decrypt } from "@/lib/crypto";
 
 const VALID_PLANS: readonly string[] = ["free", "starter", "pro", "bandit_plus"];
 
@@ -75,9 +78,17 @@ export async function POST(request: NextRequest) {
       const containerName = `openclaw-user-${userId}`;
       const safeplan      = (VALID_PLANS.includes(planId) ? planId : "free") as PlanId;
 
+      const freshUser = getUserById(userId);
+      const userConfig: UserLLMConfig = {
+        model_mode: (freshUser?.model_mode ?? "banditlm") as "banditlm" | "byok",
+        byok_api_key: freshUser?.byok_api_key ? decrypt(freshUser.byok_api_key) : undefined,
+        byok_base_url: freshUser?.byok_base_url ?? undefined,
+        byok_model_id: freshUser?.byok_model_id ?? undefined,
+      };
+
       try {
         await ensureDataDirs(userId);
-        await createUserContainer(userId, gatewayToken, hostPort, "free" as PlanId);
+        await createUserContainer(userId, gatewayToken, hostPort, "free" as PlanId, userConfig);
       } catch (err) {
         console.error("[auth] onboarding: Docker error:", err);
         // Non-fatal — container can be re-provisioned later
