@@ -655,6 +655,12 @@ export async function POST(request: NextRequest) {
   const agentRecord  = agentId ? getAgent(agentId) : null;
   const agentPrompt  = agentRecord?.system_prompt?.trim() ?? "";
   const resolvedModel = (agentRecord?.default_model?.trim() || model) as string;
+  // For BanditLM/BYOK direct calls, use the correct model id — not the gateway model name.
+  const effectiveModel = isBanditLM
+    ? BANDIT_LM.model_id
+    : isByok
+      ? (freshUser!.byok_model_id ?? resolvedModel)
+      : resolvedModel;
 
   const workspaceCtx = buildWorkspaceContext({ includeMemory: true, includeTools: true });
   const systemContent = [workspaceCtx, agentPrompt].filter(Boolean).join("\n\n---\n\n");
@@ -746,7 +752,7 @@ export async function POST(request: NextRequest) {
     // Call the gateway and get a raw Response (body not read yet)
     let gatewayResponse: Response;
     try {
-      const streamBody = { model: resolvedModel, messages: msgToSend, temperature, max_tokens, stream: true };
+      const streamBody = { model: effectiveModel, messages: msgToSend, temperature, max_tokens, stream: true };
       gatewayResponse = (isBanditLM || isByok)
         ? await directStream(directUrl, directKey, streamBody as ChatCompletionRequest)
         : await gwStream(gw, streamBody as ChatCompletionRequest);
@@ -862,7 +868,7 @@ export async function POST(request: NextRequest) {
   // Default path when stream is false or omitted.
   // chatCompletion() handles the gateway call and JSON parsing.
   try {
-    const nonStreamBody = { model: resolvedModel, messages: msgToSend, temperature, max_tokens, stream: false };
+    const nonStreamBody = { model: effectiveModel, messages: msgToSend, temperature, max_tokens, stream: false };
     const completion = (isBanditLM || isByok)
       ? await directPost(directUrl, directKey, nonStreamBody as ChatCompletionRequest)
       : await gwPost(gw, nonStreamBody as ChatCompletionRequest);
