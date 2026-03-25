@@ -61,6 +61,31 @@ const P = {
   dark:        "var(--color-bg-base)",
 } as const;
 
+// ─── Agent emoji mapping ──────────────────────────────────────────────────────
+
+const AGENT_EMOJI: Record<string, string> = {
+  research:  "🔍",
+  social:    "📱",
+  writing:   "✍️",
+  content:   "✍️",
+  support:   "💬",
+  analytics: "📊",
+  data:      "📊",
+  code:      "💻",
+  coding:    "💻",
+  sales:     "📈",
+  email:     "📧",
+  gmail:     "📧",
+};
+
+function agentEmoji(name: string): string {
+  const key = name.toLowerCase();
+  for (const [word, emoji] of Object.entries(AGENT_EMOJI)) {
+    if (key.includes(word)) return emoji;
+  }
+  return "🤖";
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatRelTime(iso: string): string {
@@ -328,10 +353,19 @@ function InfoBanner({
 
 // ─── Conversation sidebar ─────────────────────────────────────────────────────
 
+interface UsageInfo {
+  model_mode:      string;
+  credits_display: string;
+  empty:           boolean;
+  byok_provider:   string | null;
+}
+
 function ConversationSidebar({
   conversations,
   activeId,
   loading,
+  agents,
+  usageInfo,
   onSelect,
   onNewChat,
   onDelete,
@@ -340,6 +374,8 @@ function ConversationSidebar({
   conversations: Conversation[];
   activeId: string | null;
   loading: boolean;
+  agents: { id: string; name: string; department: string }[];
+  usageInfo: UsageInfo | null;
   onSelect: (conv: Conversation) => void;
   onNewChat: () => void;
   onDelete: (id: string) => void;
@@ -698,7 +734,15 @@ function ConversationSidebar({
                   >
                     {conv.title}
                   </p>
-                  <p style={{ fontSize: 10, color: P.placeholder, margin: "2px 0 0" }}>
+                  {(() => {
+                    const a = conv.agent_id ? agents.find((ag) => ag.id === conv.agent_id) : null;
+                    return a ? (
+                      <p style={{ fontSize: 10, color: P.sub, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {agentEmoji(a.name)} {a.name}
+                      </p>
+                    ) : null;
+                  })()}
+                  <p style={{ fontSize: 10, color: P.placeholder, margin: "1px 0 0" }}>
                     {formatRelTime(conv.updated_at)}
                   </p>
                 </button>
@@ -750,6 +794,29 @@ function ConversationSidebar({
           })
         )}
       </div>
+
+      {/* Credit / model badge */}
+      {usageInfo && (
+        <div style={{
+          padding: "8px 12px",
+          borderTop: `1px solid ${P.border}`,
+          flexShrink: 0,
+        }}>
+          {usageInfo.model_mode === "byok" ? (
+            <span className="text-xs" style={{ color: P.sub }}>
+              🔑 {usageInfo.byok_provider ?? "Custom"} key connected
+            </span>
+          ) : usageInfo.empty ? (
+            <a href="/dashboard/billing" className="text-xs hover:underline" style={{ color: "#f87171" }}>
+              ⚡ Credits used up — Upgrade
+            </a>
+          ) : (
+            <span className="text-xs" style={{ color: P.sub }}>
+              ⚡ BanditLM · {usageInfo.credits_display} remaining
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -759,9 +826,11 @@ function ConversationSidebar({
 export function OfficeBuildingClient({
   chatMode,
   defaultModel,
+  initialAgent = "",
 }: {
   chatMode: ChatMode;
   defaultModel: string;
+  initialAgent?: string;
 }) {
   const isDisabled = chatMode === "disabled";
 
@@ -791,6 +860,15 @@ export function OfficeBuildingClient({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  // ── usage info (model mode + credits) ──────────────────────────────────────
+  const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
+  useEffect(() => {
+    fetch("/api/usage")
+      .then((r) => r.json())
+      .then((d: UsageInfo) => setUsageInfo(d))
+      .catch(() => {});
+  }, []);
+
   // ── load conversation list on mount ────────────────────────────────────────
   useEffect(() => {
     fetch("/api/conversations")
@@ -801,7 +879,7 @@ export function OfficeBuildingClient({
   }, []);
 
   // ── agent state ─────────────────────────────────────────────────────────────
-  const [agents, setAgents]               = useState<{ id: string; name: string }[]>([]);
+  const [agents, setAgents]               = useState<{ id: string; name: string; department: string }[]>([]);
   const [activeAgentId, setActiveAgentId] = useState<string>("");
   const [agentTools, setAgentTools]       = useState<{ provider_id: string; action_ids: "*" | string[] }[]>([]);
 
@@ -838,9 +916,20 @@ export function OfficeBuildingClient({
   useEffect(() => {
     fetch("/api/agents")
       .then((r) => r.json())
-      .then((d: { agents?: { id: string; name: string }[] }) => setAgents(d.agents ?? []))
+      .then((d: { agents?: { id: string; name: string; department: string }[] }) => setAgents(d.agents ?? []))
       .catch(() => {});
   }, []);
+
+  // ── auto-select agent from URL param (runs once after agents load) ──────────
+  useEffect(() => {
+    if (!initialAgent || agents.length === 0 || activeAgentId) return;
+    const q = initialAgent.toLowerCase();
+    const match = agents.find(
+      (a) => a.department === q || a.name.toLowerCase().includes(q)
+    );
+    if (match) setActiveAgentId(match.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents, initialAgent]);
 
   // ── fetch agent tools when activeAgentId changes ────────────────────────────
   useEffect(() => {
@@ -852,6 +941,9 @@ export function OfficeBuildingClient({
       )
       .catch(() => setAgentTools([]));
   }, [activeAgentId]);
+
+  // ── derived: active agent object ────────────────────────────────────────────
+  const activeAgent = agents.find((a) => a.id === activeAgentId) ?? null;
 
   // ── derived: filteredProviders (for suggestion + ToolsPanel) ────────────────
   const filteredProviders = useMemo(() => {
@@ -954,7 +1046,7 @@ export function OfficeBuildingClient({
     ];
 
     try {
-      let chatRes = await fetch("/api/openclaw/chat", {
+      const chatRes = await fetch("/api/openclaw/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -962,15 +1054,87 @@ export function OfficeBuildingClient({
           messages: apiMessages,
           ...(convId ? { conversationId: convId } : {}),
           toolConsentMode: true,
+          stream: true,
         }),
       });
 
+      // ── Streaming path ────────────────────────────────────────────────────
+      // The server returns text/event-stream for normal chat responses.
+      // It returns application/json for tool_intent gates and error codes
+      // (those fire before the gateway call, so they're never streamed).
+      if (chatRes.ok && chatRes.headers.get("content-type")?.includes("text/event-stream")) {
+        const reader = chatRes.body?.getReader();
+        if (!reader) {
+          setError("No response stream received.");
+          setMessages(messages);
+          setFailedInput(text);
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer      = "";
+        let accumulated = "";
+
+        // Show a blinking cursor so the user knows we're receiving
+        setMessages([
+          ...nextMessages,
+          { role: "assistant", content: "▌", timestamp: new Date().toISOString() },
+        ]);
+
+        try {
+          outer: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const payload = line.slice(6).trim();
+              if (payload === "[DONE]") break outer;
+              try {
+                const parsed = JSON.parse(payload) as {
+                  choices?: Array<{ delta?: { content?: string } }>;
+                };
+                const delta = parsed.choices?.[0]?.delta?.content ?? "";
+                if (delta) {
+                  accumulated += delta;
+                  setMessages([
+                    ...nextMessages,
+                    { role: "assistant", content: accumulated, timestamp: new Date().toISOString() },
+                  ]);
+                }
+              } catch { /* malformed SSE chunk — skip */ }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (!accumulated) {
+          setError("No response received from model.");
+          setMessages(messages);
+          setFailedInput(text);
+          return;
+        }
+
+        setSuggestion(suggestTool(text, filteredProviders));
+        if (convId) {
+          fetch("/api/conversations")
+            .then((r) => r.json())
+            .then((convs: Conversation[]) => setConversations(convs))
+            .catch(() => {});
+        }
+        return;
+      }
+
+      // ── JSON path — tool_intent gate or error before gateway call ─────────
       let chatRaw: unknown = await chatRes.json();
 
       // Auto-approve Gmail intent — no consent modal in this view; user explicitly connected Gmail.
       if (chatRes.ok && (chatRaw as { type?: string }).type === "tool_intent") {
         if ((chatRaw as { intent?: { tool?: string } }).intent?.tool === "gmail") {
-          chatRes = await fetch("/api/openclaw/chat", {
+          const gmailRes = await fetch("/api/openclaw/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -981,7 +1145,17 @@ export function OfficeBuildingClient({
               toolConsentOverride: { tool: "gmail" as const, allowOnce: true as const },
             }),
           });
-          chatRaw = await chatRes.json();
+          chatRaw = await gmailRes.json();
+
+          if (!gmailRes.ok) {
+            const d = chatRaw as { error?: string; code?: string };
+            const msg  = d.error ?? `Request failed (${gmailRes.status})`;
+            const code = d.code ?? "";
+            setMessages(messages);
+            setFailedInput(text);
+            if (INFO_CODES.has(code)) setInfoMessage(msg); else setError(msg);
+            return;
+          }
         }
       }
 
@@ -1016,10 +1190,8 @@ export function OfficeBuildingClient({
         { role: "assistant", content: assistantContent, timestamp: new Date().toISOString() },
       ]);
 
-      // Suggest a tool if the user's message matches a known pattern.
       setSuggestion(suggestTool(text, filteredProviders));
 
-      // Refresh conversation list so the title and updated_at are current.
       if (convId) {
         fetch("/api/conversations")
           .then((r) => r.json())
@@ -1204,6 +1376,8 @@ export function OfficeBuildingClient({
         conversations={conversations}
         activeId={activeConversationId}
         loading={convsLoading}
+        agents={agents}
+        usageInfo={usageInfo}
         onSelect={selectConversation}
         onNewChat={handleNewChat}
         onDelete={handleDeleteConversation}
@@ -1224,14 +1398,28 @@ export function OfficeBuildingClient({
           }}
         >
           <div>
-            <h1
-              className="text-sm font-semibold"
-              style={{ color: P.fg }}
-            >
-              {activeConversationId
-                ? (conversations.find((c) => c.id === activeConversationId)?.title ?? "Chat")
-                : "Office Building"}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1
+                className="text-sm font-semibold"
+                style={{ color: P.fg }}
+              >
+                {activeConversationId
+                  ? (conversations.find((c) => c.id === activeConversationId)?.title ?? "Chat")
+                  : "Office Building"}
+              </h1>
+              {activeAgent && (
+                <span
+                  className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                  style={{
+                    background: "var(--color-bg-surface-2)",
+                    color:      "var(--color-text-secondary)",
+                    border:     `1px solid ${P.border}`,
+                  }}
+                >
+                  {agentEmoji(activeAgent.name)} {activeAgent.name}
+                </span>
+              )}
+            </div>
             <p className="text-xs mt-0.5" style={{ color: P.sub }}>
               Chat with your OpenClaw agents
             </p>
@@ -1343,6 +1531,25 @@ export function OfficeBuildingClient({
                   </kbd>{" "}
                   to send
                 </p>
+                {/* Agent chips — lets user pick agent before sending */}
+                {agents.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-5 justify-center">
+                    {agents.map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => setActiveAgentId(activeAgentId === a.id ? "" : a.id)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all"
+                        style={{
+                          background: activeAgentId === a.id ? P.fg    : P.card,
+                          color:      activeAgentId === a.id ? P.fgLight : P.sub,
+                          border:     `1px solid ${activeAgentId === a.id ? P.fg : P.border}`,
+                        }}
+                      >
+                        {agentEmoji(a.name)} {a.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           ) : (

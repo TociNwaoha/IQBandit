@@ -10,6 +10,7 @@ import { getUserById } from "@/lib/user-db";
 import { AccountForm } from "./AccountForm";
 import { PasswordForm } from "./PasswordForm";
 import { AppearanceSection } from "./AppearanceSection";
+import { AIModelSection } from "./AIModelSection";
 
 export default async function SettingsPage() {
   const session = await getSessionFromCookies();
@@ -29,6 +30,14 @@ export default async function SettingsPage() {
         <h2 className="text-xs uppercase tracking-widest font-semibold" style={{ color: "var(--color-text-muted)" }}>Appearance</h2>
         <div className="rounded-2xl p-5" style={{ border: "1px solid var(--color-border)", background: "var(--color-bg-surface)" }}>
           <AppearanceSection />
+        </div>
+      </section>
+
+      {/* AI Model section */}
+      <section className="flex flex-col gap-4">
+        <h2 className="text-xs uppercase tracking-widest font-semibold" style={{ color: "var(--color-text-muted)" }}>AI Model</h2>
+        <div className="rounded-2xl p-5" style={{ border: "1px solid var(--color-border)", background: "var(--color-bg-surface)" }}>
+          <AIModelSection />
         </div>
       </section>
 

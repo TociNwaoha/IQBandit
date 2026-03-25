@@ -49,6 +49,12 @@ function tryOpenDB(): BetterSQLiteDB | null {
     safeAlter(`ALTER TABLE users ADD COLUMN avatar_url TEXT`);
     safeAlter(`ALTER TABLE users ADD COLUMN agent_name TEXT DEFAULT 'My Agent'`);
     safeAlter(`ALTER TABLE users ADD COLUMN use_case TEXT`);
+    safeAlter(`ALTER TABLE users ADD COLUMN model_mode TEXT DEFAULT 'banditlm'`);
+    safeAlter(`ALTER TABLE users ADD COLUMN byok_provider TEXT`);
+    safeAlter(`ALTER TABLE users ADD COLUMN byok_api_key TEXT`);
+    safeAlter(`ALTER TABLE users ADD COLUMN byok_base_url TEXT`);
+    safeAlter(`ALTER TABLE users ADD COLUMN byok_model_id TEXT`);
+    safeAlter(`ALTER TABLE users ADD COLUMN credits_usd REAL DEFAULT 5.00`);
 
     return db;
   } catch (err) {
@@ -72,6 +78,12 @@ export interface User {
   onboarding_done: number;
   agent_name:      string | null;
   use_case:        string | null;
+  model_mode:      string | null;
+  byok_provider:   string | null;
+  byok_api_key:    string | null;
+  byok_base_url:   string | null;
+  byok_model_id:   string | null;
+  credits_usd:     number | null;
   created_at:      string;
   updated_at:      string;
 }
@@ -88,8 +100,8 @@ export function createUser(data: {
 }): User {
   if (!db) throw new Error("[user-db] DB unavailable");
   db.prepare(`
-    INSERT INTO users (id, email, name, password_hash, google_id, avatar_url)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, email, name, password_hash, google_id, avatar_url, model_mode, credits_usd)
+    VALUES (?, ?, ?, ?, ?, ?, 'banditlm', 5.00)
   `).run(
     data.id,
     data.email,
@@ -163,4 +175,16 @@ export function userExists(email: string): boolean {
   if (!db) return false;
   const row = db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email);
   return row !== undefined;
+}
+
+/**
+ * Deducts `amount` USD from the user's BanditLM credit balance.
+ * Clamps to 0 — credits never go negative.
+ * No-op if the DB is unavailable.
+ */
+export function deductCredits(userId: string, amount: number): void {
+  if (!db) return;
+  db.prepare(
+    `UPDATE users SET credits_usd = MAX(0, credits_usd - ?) WHERE id = ?`
+  ).run(amount, userId);
 }

@@ -21,8 +21,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { chatCompletion, chatCompletionStream, ChatMessage } from "@/lib/openclaw";
+import { ChatMessage, ChatCompletionRequest, ChatCompletionResponse } from "@/lib/openclaw";
+import { getSettings } from "@/lib/settings";
 import { getChatMode } from "@/lib/llm";
+import { getInstanceByUserId } from "@/lib/instances";
+import { getCurrentUserIdFromSession } from "@/lib/users";
+import { getUserById, deductCredits } from "@/lib/user-db";
+import { decrypt } from "@/lib/crypto";
+import { BANDIT_LM } from "@/lib/plans";
 import { logChatRequest } from "@/lib/logger";
 import { checkRateLimit, getRateLimitKey } from "@/lib/ratelimit";
 import {
@@ -313,6 +319,117 @@ function parseChatError(err: Error): ChatErrorResult {
 }
 
 // ---------------------------------------------------------------------------
+// Per-user gateway routing
+// ---------------------------------------------------------------------------
+
+interface GwConfig { url: string; token: string; chatPath: string }
+
+/**
+ * Resolves the gateway URL + token for a request.
+ * If the user has a running container (instance.openclaw_url + gateway_token),
+ * those take priority over the global env var / settings values.
+ * Falls back to global settings for dev/admin single-instance mode.
+ */
+function resolveGateway(
+  instance: ReturnType<typeof getInstanceByUserId>,
+): GwConfig {
+  const s = getSettings();
+  if (
+    instance?.status === "running" &&
+    instance.openclaw_url &&
+    instance.gateway_token
+  ) {
+    return {
+      url:      instance.openclaw_url,
+      token:    instance.gateway_token,
+      chatPath: s.OPENCLAW_CHAT_PATH,
+    };
+  }
+  // Global fallback (dev mode / single-user deploy)
+  return {
+    url:      s.OPENCLAW_GATEWAY_URL,
+    token:    s.OPENCLAW_GATEWAY_TOKEN,
+    chatPath: s.OPENCLAW_CHAT_PATH,
+  };
+}
+
+/** Non-streaming gateway POST — returns parsed JSON response. */
+async function gwPost(cfg: GwConfig, body: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+  const endpoint = `${cfg.url}${cfg.chatPath}`;
+  console.log(`[openclaw] → POST ${endpoint}`);
+  const res = await fetch(endpoint, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
+    body:    JSON.stringify(body),
+    cache:   "no-store",
+    signal:  AbortSignal.timeout(30_000),
+  });
+  console.log(`[openclaw] ← ${res.status} ${endpoint}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`OpenClaw gateway error [${res.status}]: ${text || res.statusText}`);
+  }
+  return res.json() as Promise<ChatCompletionResponse>;
+}
+
+/** Streaming gateway POST — returns raw Response so the body can be piped. */
+async function gwStream(cfg: GwConfig, body: ChatCompletionRequest): Promise<Response> {
+  const endpoint = `${cfg.url}${cfg.chatPath}`;
+  console.log(`[openclaw] stream → POST ${endpoint}`);
+  const res = await fetch(endpoint, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
+    body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(30_000),
+  });
+  console.log(`[openclaw] stream ← ${res.status} ${endpoint}`);
+  return res;
+}
+
+// ---------------------------------------------------------------------------
+// Direct LLM helpers (BanditLM / BYOK — bypass OpenClaw gateway)
+// ---------------------------------------------------------------------------
+
+/** Non-streaming direct POST to an OpenAI-compatible /chat/completions endpoint. */
+async function directPost(
+  url: string,
+  apiKey: string,
+  body: ChatCompletionRequest,
+): Promise<ChatCompletionResponse> {
+  console.log(`[openclaw] direct → POST ${url}`);
+  const res = await fetch(url, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body:    JSON.stringify(body),
+    cache:   "no-store",
+    signal:  AbortSignal.timeout(60_000),
+  });
+  console.log(`[openclaw] direct ← ${res.status} ${url}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`LLM error [${res.status}]: ${text || res.statusText}`);
+  }
+  return res.json() as Promise<ChatCompletionResponse>;
+}
+
+/** Streaming direct POST to an OpenAI-compatible /chat/completions endpoint. */
+async function directStream(
+  url: string,
+  apiKey: string,
+  body: ChatCompletionRequest,
+): Promise<Response> {
+  console.log(`[openclaw] direct stream → POST ${url}`);
+  const res = await fetch(url, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(60_000),
+  });
+  console.log(`[openclaw] direct stream ← ${res.status} ${url}`);
+  return res;
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/openclaw/chat
 // ---------------------------------------------------------------------------
 
@@ -324,6 +441,38 @@ export async function POST(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // ── 1b. Per-user container routing ───────────────────────────────────────
+  // Look up the user's provisioned OpenClaw container from the instances table.
+  // If found, use its openclaw_url + gateway_token instead of the global env vars.
+  // Falls back to global settings when no running instance exists (dev / admin mode).
+  const userId   = getCurrentUserIdFromSession(session);
+  const instance = getInstanceByUserId(userId);
+  const gw       = resolveGateway(instance);
+
+  // ── 1c. Determine LLM routing mode ───────────────────────────────────────
+  // BanditLM  → call DeepSeek directly using DEEPSEEK_API_KEY
+  // BYOK      → call the user's own provider using their stored (encrypted) key
+  // Otherwise → forward to the OpenClaw gateway (existing path)
+  const freshUser  = getUserById(userId);
+  const isByok     = freshUser?.model_mode === "byok" && !!freshUser.byok_api_key;
+  const isBanditLM = !isByok && (freshUser?.model_mode === "banditlm" || !freshUser?.model_mode);
+
+  // Credit guard — block before any work is done
+  if (isBanditLM && (freshUser?.credits_usd ?? 5) <= 0) {
+    return NextResponse.json(
+      { error: "Your BanditLM credits are used up. Upgrade to continue.", code: "CREDITS_EMPTY", upgrade: true },
+      { status: 402 },
+    );
+  }
+
+  // Resolve the direct-call URL + key (only used for BanditLM / BYOK paths)
+  const directUrl = isByok
+    ? `${freshUser!.byok_base_url}/chat/completions`
+    : `${BANDIT_LM.api_url}/chat/completions`;
+  const directKey = isByok
+    ? decrypt(freshUser!.byok_api_key!)
+    : (process.env.DEEPSEEK_API_KEY ?? "");
 
   // ── 2. Rate limiting ─────────────────────────────────────────────────────
   // Check BEFORE feature flags and body parsing — it's the cheapest check.
@@ -597,13 +746,10 @@ export async function POST(request: NextRequest) {
     // Call the gateway and get a raw Response (body not read yet)
     let gatewayResponse: Response;
     try {
-      gatewayResponse = await chatCompletionStream({
-        model: resolvedModel,
-        messages: msgToSend,
-        temperature,
-        max_tokens,
-        stream: true,
-      });
+      const streamBody = { model: resolvedModel, messages: msgToSend, temperature, max_tokens, stream: true };
+      gatewayResponse = (isBanditLM || isByok)
+        ? await directStream(directUrl, directKey, streamBody as ChatCompletionRequest)
+        : await gwStream(gw, streamBody as ChatCompletionRequest);
     } catch (err) {
       // Network-level failure (ECONNREFUSED, DNS, timeout, etc.)
       const raw = err instanceof Error ? err : new Error(String(err));
@@ -677,6 +823,13 @@ export async function POST(request: NextRequest) {
           prompt_chars: promptChars,
           response_chars: responseChars,
         });
+        // Deduct BanditLM credits (estimated from char counts)
+        if (isBanditLM && freshUser) {
+          const cost =
+            (Math.ceil(promptChars   / 4) * BANDIT_LM.input_rate) +
+            (Math.ceil(responseChars / 4) * BANDIT_LM.output_rate);
+          deductCredits(freshUser.id, cost);
+        }
         console.log(
           `[/api/openclaw/chat] stream done — model=${model} ` +
           `latency=${Date.now() - startTime}ms bytes=${responseChars}`
@@ -709,13 +862,10 @@ export async function POST(request: NextRequest) {
   // Default path when stream is false or omitted.
   // chatCompletion() handles the gateway call and JSON parsing.
   try {
-    const completion = await chatCompletion({
-      model: resolvedModel,
-      messages: msgToSend,
-      temperature,
-      max_tokens,
-      stream: false,
-    });
+    const nonStreamBody = { model: resolvedModel, messages: msgToSend, temperature, max_tokens, stream: false };
+    const completion = (isBanditLM || isByok)
+      ? await directPost(directUrl, directKey, nonStreamBody as ChatCompletionRequest)
+      : await gwPost(gw, nonStreamBody as ChatCompletionRequest);
 
     const assistantContent = completion.choices?.[0]?.message?.content ?? "";
     const responseChars = assistantContent.length;
@@ -730,6 +880,14 @@ export async function POST(request: NextRequest) {
       prompt_chars: promptChars,
       response_chars: responseChars,
     });
+
+    // Deduct BanditLM credits (non-streaming path)
+    if (isBanditLM && freshUser) {
+      const cost =
+        (Math.ceil(promptChars   / 4) * BANDIT_LM.input_rate) +
+        (Math.ceil(responseChars / 4) * BANDIT_LM.output_rate);
+      deductCredits(freshUser.id, cost);
+    }
 
     // ── Conversation persistence ────────────────────────────────────────────
     // Non-fatal: a DB failure here must never break the chat response.

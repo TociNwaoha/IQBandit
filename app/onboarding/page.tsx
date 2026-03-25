@@ -7,8 +7,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { BYOK_PROVIDERS } from "@/lib/plans";
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
 
 const USE_CASES = [
   { id: "social",     emoji: "📱", title: "Social Media Management" },
@@ -54,17 +55,17 @@ type PlanId = "free" | "starter" | "pro" | "bandit_plus";
 function ProgressDots({ step }: { step: Step }) {
   return (
     <div className="flex items-center gap-2 mb-8">
-      {([1, 2, 3, 4] as const).map((s) => (
+      {([1, 2, 3, 4, 5] as const).map((s) => (
         <div key={s} className="flex items-center gap-2">
           <div
             className={`w-2 h-2 rounded-full transition-all ${
               s === step ? "bg-blue-400 scale-125" : s < step ? "bg-blue-600" : "bg-zinc-700"
             }`}
           />
-          {s < 4 && <div className={`h-px w-8 ${s < step ? "bg-blue-600" : "bg-zinc-700"}`} />}
+          {s < 5 && <div className={`h-px w-8 ${s < step ? "bg-blue-600" : "bg-zinc-700"}`} />}
         </div>
       ))}
-      <span className="text-xs text-zinc-500 ml-2">Step {step} of 4</span>
+      <span className="text-xs text-zinc-500 ml-2">Step {step} of 5</span>
     </div>
   );
 }
@@ -72,19 +73,24 @@ function ProgressDots({ step }: { step: Step }) {
 export default function OnboardingPage() {
   const router = useRouter();
 
-  const [step,      setStep]      = useState<Step>(1);
-  const [name,      setName]      = useState("");
-  const [useCase,   setUseCase]   = useState<UseCaseId | null>(null);
-  const [agentName, setAgentName] = useState("");
-  const [planId,    setPlanId]    = useState<PlanId>("free");
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
+  const [step,        setStep]        = useState<Step>(1);
+  const [name,        setName]        = useState("");
+  const [useCase,     setUseCase]     = useState<UseCaseId | null>(null);
+  const [agentName,   setAgentName]   = useState("");
+  const [planId,      setPlanId]      = useState<PlanId>("free");
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+  const [modelMode,   setModelMode]   = useState<"banditlm" | "byok">("banditlm");
+  const [byokProvider, setByokProvider] = useState("openai");
+  const [byokApiKey,  setByokApiKey]  = useState("");
+  const [byokModelId, setByokModelId] = useState("");
+  const [byokBaseUrl, setByokBaseUrl] = useState("");
 
   const selectedUseCase = USE_CASES.find((u) => u.id === useCase);
   const useCaseLabel    = selectedUseCase?.title ?? "your goals";
 
   function next() {
-    setStep((s) => (s < 4 ? ((s + 1) as Step) : s));
+    setStep((s) => (s < 5 ? ((s + 1) as Step) : s));
   }
 
   async function handleFinish() {
@@ -113,6 +119,25 @@ export default function OnboardingPage() {
         setError(data.error ?? "Something went wrong. Please try again.");
         return;
       }
+
+      // Save model mode (non-fatal — onboarding proceeds regardless)
+      try {
+        await fetch("/api/users/model", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            modelMode === "banditlm"
+              ? { mode: "banditlm" }
+              : {
+                  mode:     "byok",
+                  provider: byokProvider,
+                  api_key:  byokApiKey,
+                  model_id: byokModelId,
+                  base_url: byokBaseUrl,
+                }
+          ),
+        });
+      } catch { /* non-fatal */ }
 
       if (data.requiresPayment && data.planId) {
         const interval     = typeof sessionStorage !== "undefined"
@@ -238,8 +263,100 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 4 — Plan */}
+        {/* Step 4 — AI model */}
         {step === 4 && (
+          <div className="flex flex-col gap-6">
+            <div>
+              <h1 className="text-2xl font-semibold text-zinc-100 tracking-tight mb-1">Power your agent</h1>
+              <p className="text-sm text-zinc-500">Choose how your AI is powered. You can change this anytime.</p>
+            </div>
+
+            {/* Card A — BanditLM */}
+            <button
+              onClick={() => setModelMode("banditlm")}
+              className={`text-left px-4 py-4 rounded-xl border transition-all ${
+                modelMode === "banditlm"
+                  ? "border-blue-500 bg-blue-500/10"
+                  : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                    ⚡ BanditLM
+                    <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full">Recommended</span>
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1.5">IQBandit&apos;s built-in AI model</p>
+                  <p className="text-xs text-zinc-500">$5 free credits included — no API key needed</p>
+                </div>
+              </div>
+            </button>
+
+            {/* Card B — BYOK */}
+            <button
+              onClick={() => setModelMode("byok")}
+              className={`text-left px-4 py-4 rounded-xl border transition-all ${
+                modelMode === "byok"
+                  ? "border-blue-500 bg-blue-500/10"
+                  : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
+              }`}
+            >
+              <p className="text-sm font-semibold text-zinc-100">🔑 Bring Your Own Key</p>
+              <p className="text-xs text-zinc-500 mt-1.5">
+                Use OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible endpoint. You control costs directly.
+              </p>
+            </button>
+
+            {/* BYOK sub-form */}
+            {modelMode === "byok" && (
+              <div className="flex flex-col gap-3 pl-1">
+                <select
+                  value={byokProvider}
+                  onChange={(e) => setByokProvider(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700/60 rounded-xl px-4 py-2.5 text-zinc-100 text-sm focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                >
+                  {BYOK_PROVIDERS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="password"
+                  value={byokApiKey}
+                  onChange={(e) => setByokApiKey(e.target.value)}
+                  placeholder={BYOK_PROVIDERS.find((p) => p.id === byokProvider)?.placeholder ?? "API key"}
+                  className="w-full bg-zinc-900 border border-zinc-700/60 rounded-xl px-4 py-3 text-zinc-100 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                />
+                <input
+                  type="text"
+                  value={byokModelId}
+                  onChange={(e) => setByokModelId(e.target.value)}
+                  placeholder="Model ID — e.g. gpt-4o, claude-sonnet-4-6, deepseek-chat"
+                  className="w-full bg-zinc-900 border border-zinc-700/60 rounded-xl px-4 py-3 text-zinc-100 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                />
+                {byokProvider === "custom" && (
+                  <input
+                    type="text"
+                    value={byokBaseUrl}
+                    onChange={(e) => setByokBaseUrl(e.target.value)}
+                    placeholder="Base URL — e.g. https://your-endpoint.com/v1"
+                    className="w-full bg-zinc-900 border border-zinc-700/60 rounded-xl px-4 py-3 text-zinc-100 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                  />
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={next}
+              disabled={modelMode === "byok" && (!byokApiKey.trim() || !byokModelId.trim())}
+              className="self-start inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
+            >
+              Continue →
+            </button>
+          </div>
+        )}
+
+        {/* Step 5 — Plan */}
+        {step === 5 && (
           <div className="flex flex-col gap-6">
             <div>
               <h1 className="text-2xl font-semibold text-zinc-100 tracking-tight mb-1">Choose how you want to start</h1>

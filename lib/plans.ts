@@ -77,3 +77,27 @@ export const ALL_PLAN_IDS: readonly PlanId[] = [
   "pro",
   "bandit_plus",
 ] as const;
+
+// ─── BanditLM config ──────────────────────────────────────────────────────────
+
+/** BanditLM — IQBandit's built-in AI powered by DeepSeek. */
+export const BANDIT_LM = {
+  display_name: "BanditLM",
+  tagline: "IQBandit's built-in AI — $5 free credits included",
+  api_url: "https://api.deepseek.com/v1",
+  model_id: "deepseek-chat",
+  /** Per-token billing rate for input tokens (USD). */
+  input_rate:  1.00 / 1_000_000,
+  /** Per-token billing rate for output tokens (USD). */
+  output_rate: 5.00 / 1_000_000,
+} as const;
+
+/** BYOK providers — OpenAI-compatible endpoints users can connect. */
+export const BYOK_PROVIDERS = [
+  { id: "openai",    name: "OpenAI",    base_url: "https://api.openai.com/v1",    placeholder: "sk-..." },
+  { id: "anthropic", name: "Anthropic", base_url: "https://api.anthropic.com/v1", placeholder: "sk-ant-..." },
+  { id: "deepseek",  name: "DeepSeek",  base_url: "https://api.deepseek.com/v1",  placeholder: "sk-..." },
+  { id: "custom",    name: "Custom",    base_url: "",                              placeholder: "Any OpenAI-compatible endpoint" },
+] as const;
+
+export type ByokProviderId = typeof BYOK_PROVIDERS[number]["id"];
