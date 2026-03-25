@@ -9,6 +9,15 @@ import { runCommand } from "@/lib/ssh";
 import { getPortsInUse } from "@/lib/instances";
 import { getPlanLimits, type PlanId } from "@/lib/plans";
 
+// ─── LLM config passed at provision time ──────────────────────────────────────
+
+export interface UserLLMConfig {
+  model_mode: "banditlm" | "byok";
+  byok_api_key?: string;   // already decrypted before passing in
+  byok_base_url?: string;
+  byok_model_id?: string;
+}
+
 // ─── port allocation ──────────────────────────────────────────────────────────
 
 const PORT_START = 20_000;
@@ -46,11 +55,34 @@ export async function createUserContainer(
   userId: string,
   gatewayToken: string,
   hostPort: number,
-  planId: PlanId
+  planId: PlanId,
+  userConfig: UserLLMConfig,
 ): Promise<void> {
   const name   = `openclaw-user-${userId}`;
   const base   = `/home/iqbandit/users/${userId}`;
   const limits = getPlanLimits(planId);
+
+  const llmEnv = userConfig.model_mode === "byok" && userConfig.byok_api_key
+    ? [
+        `OPENAI_API_KEY=${userConfig.byok_api_key}`,
+        `OPENAI_BASE_URL=${userConfig.byok_base_url ?? ""}`,
+        `OPENAI_MODEL=${userConfig.byok_model_id ?? "gpt-4o"}`,
+      ]
+    : [
+        // BanditLM — DeepSeek under the hood
+        `OPENAI_API_KEY=${process.env.DEEPSEEK_API_KEY ?? ""}`,
+        `OPENAI_BASE_URL=https://api.deepseek.com/v1`,
+        `OPENAI_MODEL=deepseek-chat`,
+      ];
+
+  const searchEnv = [
+    `SEARCH_SERVICE_URL=http://iqbandit-search:9000`,
+    `SEARXNG_URL=http://iqbandit-searxng:8080`,
+  ];
+
+  const envFlags = [...llmEnv, ...searchEnv]
+    .map((e) => `-e "${e}"`)
+    .join(" \\\n  ");
 
   const cmd = [
     "docker run -d",
@@ -62,6 +94,7 @@ export async function createUserContainer(
     `--restart unless-stopped`,
     `-e OPENCLAW_GATEWAY_TOKEN=${gatewayToken}`,
     `-e OPENCLAW_SKIP_ONBOARD=true`,
+    envFlags,
     `-p ${hostPort}:18789`,
     `-v ${base}/config:/home/node/.openclaw`,
     `-v ${base}/workspace:/home/node/.openclaw/workspace`,

@@ -466,13 +466,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Resolve the direct-call URL + key (only used for BanditLM / BYOK paths)
-  const directUrl = isByok
-    ? `${freshUser!.byok_base_url}/chat/completions`
-    : `${BANDIT_LM.api_url}/chat/completions`;
-  const directKey = isByok
-    ? decrypt(freshUser!.byok_api_key!)
-    : (process.env.DEEPSEEK_API_KEY ?? "");
+  // ── Instance guard ────────────────────────────────────────────────────────
+  // Every user needs a running OpenClaw container. BanditLM users without one
+  // are auto-provisioned in the background; BYOK users get a support message.
+  if (!instance || instance.status !== "running") {
+    if (isBanditLM) {
+      const baseUrl = process.env.APP_INTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+      fetch(`${baseUrl}/api/provision`, {
+        method:  "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cookie": request.headers.get("cookie") ?? "",
+        },
+        body: JSON.stringify({ plan: "free" }),
+      }).catch(() => {});
+      return NextResponse.json(
+        { error: "Provisioning your agent — please retry in a moment.", provisioning: true },
+        { status: 202 },
+      );
+    }
+    return NextResponse.json(
+      { error: "Your agent container is not running. Please contact support." },
+      { status: 503 },
+    );
+  }
 
   // ── 2. Rate limiting ─────────────────────────────────────────────────────
   // Check BEFORE feature flags and body parsing — it's the cheapest check.
@@ -753,9 +770,7 @@ export async function POST(request: NextRequest) {
     let gatewayResponse: Response;
     try {
       const streamBody = { model: effectiveModel, messages: msgToSend, temperature, max_tokens, stream: true };
-      gatewayResponse = (isBanditLM || isByok)
-        ? await directStream(directUrl, directKey, streamBody as ChatCompletionRequest)
-        : await gwStream(gw, streamBody as ChatCompletionRequest);
+      gatewayResponse = await gwStream(gw, streamBody as ChatCompletionRequest);
     } catch (err) {
       // Network-level failure (ECONNREFUSED, DNS, timeout, etc.)
       const raw = err instanceof Error ? err : new Error(String(err));
@@ -869,9 +884,7 @@ export async function POST(request: NextRequest) {
   // chatCompletion() handles the gateway call and JSON parsing.
   try {
     const nonStreamBody = { model: effectiveModel, messages: msgToSend, temperature, max_tokens, stream: false };
-    const completion = (isBanditLM || isByok)
-      ? await directPost(directUrl, directKey, nonStreamBody as ChatCompletionRequest)
-      : await gwPost(gw, nonStreamBody as ChatCompletionRequest);
+    const completion = await gwPost(gw, nonStreamBody as ChatCompletionRequest);
 
     const assistantContent = completion.choices?.[0]?.message?.content ?? "";
     const responseChars = assistantContent.length;

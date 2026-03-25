@@ -21,9 +21,12 @@ import {
   allocatePort,
   ensureDataDirs,
   createUserContainer,
+  type UserLLMConfig,
 } from "@/lib/container-manager";
 import { installDefaultSkills } from "@/lib/skill-installer";
 import { type PlanId } from "@/lib/plans";
+import { getUserById } from "@/lib/user-db";
+import { decrypt } from "@/lib/crypto";
 
 const VALID_PLAN_IDS: readonly PlanId[] = ["free", "starter", "pro", "bandit_plus"];
 
@@ -75,9 +78,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const hostPort      = allocatePort();
     const containerName = `openclaw-user-${userId}`;
 
+    const freshUser = getUserById(userId);
+    const userConfig: UserLLMConfig = {
+      model_mode: (freshUser?.model_mode ?? "banditlm") as "banditlm" | "byok",
+      byok_api_key: freshUser?.byok_api_key ? decrypt(freshUser.byok_api_key) : undefined,
+      byok_base_url: freshUser?.byok_base_url ?? undefined,
+      byok_model_id: freshUser?.byok_model_id ?? undefined,
+    };
+
     try {
       await ensureDataDirs(userId);
-      await createUserContainer(userId, gatewayToken, hostPort, plan);
+      await createUserContainer(userId, gatewayToken, hostPort, plan, userConfig);
     } catch (err) {
       console.error("[provision] Docker error:", err);
       return NextResponse.json(
