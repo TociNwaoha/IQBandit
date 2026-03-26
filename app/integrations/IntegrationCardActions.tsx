@@ -99,11 +99,12 @@ export function IntegrationCardActions({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setMode("form")}
-            className="px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-xs font-medium text-white transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: "var(--color-text-primary)", color: "var(--color-bg-base)" }}
           >
             Connect
           </button>
-          {err && <span className="text-xs text-red-600">{err}</span>}
+          {err && <span className="text-xs text-red-500">{err}</span>}
         </div>
       );
     }
@@ -115,7 +116,12 @@ export function IntegrationCardActions({
           placeholder="Label (e.g. My Account)"
           value={labelValue}
           onChange={(e) => setLabelValue(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 transition-all"
+          className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
+          style={{
+            background: "var(--color-bg-base)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-primary)",
+          }}
         />
         <input
           type="password"
@@ -127,21 +133,31 @@ export function IntegrationCardActions({
             if (e.key === "Enter") handleSave();
             if (e.key === "Escape") { setMode("idle"); setErr(null); }
           }}
-          className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-900 font-mono placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 transition-all"
+          className="w-full px-3 py-2 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
+          style={{
+            background: "var(--color-bg-base)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text-primary)",
+          }}
         />
-        {err && <p className="text-xs text-red-600">{err}</p>}
+        {err && <p className="text-xs text-red-500">{err}</p>}
         <div className="flex gap-2">
           <button
             onClick={handleSave}
             disabled={!keyValue.trim() || mode === "saving"}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium text-white transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium transition-colors"
+            style={{ background: "var(--color-text-primary)", color: "var(--color-bg-base)" }}
           >
             {mode === "saving" && <Loader2 size={12} className="animate-spin" />}
             {mode === "saving" ? "Saving…" : "Save"}
           </button>
           <button
             onClick={() => { setMode("idle"); setErr(null); }}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs transition-colors"
+            style={{
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text-muted)",
+            }}
           >
             Cancel
           </button>
@@ -157,7 +173,8 @@ export function IntegrationCardActions({
         {oauthStartUrl ? (
           <a
             href={oauthStartUrl}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-xs font-medium text-white transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: "var(--color-text-primary)", color: "var(--color-bg-base)" }}
           >
             Connect via OAuth
             <ExternalLink size={10} />
@@ -166,12 +183,13 @@ export function IntegrationCardActions({
           <button
             disabled
             title="OAuth connection flow coming soon"
-            className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs font-medium text-gray-400 cursor-not-allowed"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-not-allowed"
+            style={{ background: "var(--color-bg-surface-2)", color: "var(--color-text-muted)" }}
           >
             Connect via OAuth
           </button>
         )}
-        {err && <span className="text-xs text-red-600">{err}</span>}
+        {err && <span className="text-xs text-red-500">{err}</span>}
       </div>
     );
   }
@@ -182,7 +200,8 @@ export function IntegrationCardActions({
       <button
         disabled
         title="Webhook URL setup coming soon"
-        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs font-medium text-gray-400 cursor-not-allowed"
+        className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-not-allowed"
+        style={{ background: "var(--color-bg-surface-2)", color: "var(--color-text-muted)" }}
       >
         Configure Webhook
       </button>
@@ -196,12 +215,13 @@ export function IntegrationCardActions({
         <button
           onClick={handleDisconnect}
           disabled={mode === "disconnecting"}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs text-red-600 hover:text-red-700 transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed text-xs transition-colors"
+          style={{ border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444" }}
         >
           {mode === "disconnecting" && <Loader2 size={12} className="animate-spin" />}
           {mode === "disconnecting" ? "Disconnecting…" : "Disconnect"}
         </button>
-        {err && <span className="text-xs text-red-600">{err}</span>}
+        {err && <span className="text-xs text-red-500">{err}</span>}
       </div>
     );
   }
@@ -210,7 +230,8 @@ export function IntegrationCardActions({
   return (
     <button
       disabled
-      className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs font-medium text-gray-400 cursor-not-allowed"
+      className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-not-allowed"
+      style={{ background: "var(--color-bg-surface-2)", color: "var(--color-text-muted)" }}
     >
       Connect
     </button>

@@ -468,9 +468,16 @@ export async function POST(request: NextRequest) {
 
   // ── Instance guard ────────────────────────────────────────────────────────
   // Every user needs a running OpenClaw container. BanditLM users without one
-  // are auto-provisioned in the background; BYOK users get a support message.
+  // are auto-provisioned in the background and fall through to a direct
+  // DeepSeek call so they still get a response while the container spins up.
+  // BYOK users without a container get a support message.
+  let useDirect = false;
+  let directUrl = "";
+  let directKey = "";
+
   if (!instance || instance.status !== "running") {
     if (isBanditLM) {
+      // Fire background provision (non-blocking)
       const baseUrl = process.env.APP_INTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
       fetch(`${baseUrl}/api/provision`, {
         method:  "POST",
@@ -480,15 +487,16 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({ plan: "free" }),
       }).catch(() => {});
+      // Fall through to direct DeepSeek call while container provisions
+      useDirect = true;
+      directUrl = `${BANDIT_LM.api_url}/chat/completions`;
+      directKey = process.env.DEEPSEEK_API_KEY ?? "";
+    } else {
       return NextResponse.json(
-        { error: "Provisioning your agent — please retry in a moment.", provisioning: true },
-        { status: 202 },
+        { error: "Your agent container is not running. Please contact support." },
+        { status: 503 },
       );
     }
-    return NextResponse.json(
-      { error: "Your agent container is not running. Please contact support." },
-      { status: 503 },
-    );
   }
 
   // ── 2. Rate limiting ─────────────────────────────────────────────────────
@@ -680,7 +688,12 @@ export async function POST(request: NextRequest) {
       : resolvedModel;
 
   const workspaceCtx = buildWorkspaceContext({ includeMemory: true, includeTools: true });
-  const systemContent = [workspaceCtx, agentPrompt].filter(Boolean).join("\n\n---\n\n");
+  const todayStr = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    timeZone: "America/New_York",
+  });
+  const datePrefix = `Today's date is ${todayStr}. Always use this exact date. Do not assume a different year.`;
+  const systemContent = [datePrefix, workspaceCtx, agentPrompt].filter(Boolean).join("\n\n---\n\n");
 
   if (systemContent) {
     const hasSystem = (msgToSend as { role: string }[]).some((m) => m.role === "system");
@@ -770,7 +783,9 @@ export async function POST(request: NextRequest) {
     let gatewayResponse: Response;
     try {
       const streamBody = { model: effectiveModel, messages: msgToSend, temperature, max_tokens, stream: true };
-      gatewayResponse = await gwStream(gw, streamBody as ChatCompletionRequest);
+      gatewayResponse = useDirect
+        ? await directStream(directUrl, directKey, streamBody as ChatCompletionRequest)
+        : await gwStream(gw, streamBody as ChatCompletionRequest);
     } catch (err) {
       // Network-level failure (ECONNREFUSED, DNS, timeout, etc.)
       const raw = err instanceof Error ? err : new Error(String(err));
@@ -884,7 +899,9 @@ export async function POST(request: NextRequest) {
   // chatCompletion() handles the gateway call and JSON parsing.
   try {
     const nonStreamBody = { model: effectiveModel, messages: msgToSend, temperature, max_tokens, stream: false };
-    const completion = await gwPost(gw, nonStreamBody as ChatCompletionRequest);
+    const completion = useDirect
+      ? await directPost(directUrl, directKey, nonStreamBody as ChatCompletionRequest)
+      : await gwPost(gw, nonStreamBody as ChatCompletionRequest);
 
     const assistantContent = completion.choices?.[0]?.message?.content ?? "";
     const responseChars = assistantContent.length;
@@ -942,6 +959,10 @@ export async function POST(request: NextRequest) {
 
     // Log full technical details server-side only
     console.error(`[/api/openclaw/chat] ${code}: ${raw.message}`);
+    console.error("[chat] useDirect:", useDirect);
+    console.error("[chat] apiUrl:", useDirect ? directUrl : (instance?.openclaw_url ?? "no-instance"));
+    console.error("[chat] model:", effectiveModel);
+    console.error("[chat] hasKey:", useDirect ? !!directKey : !!gw.token);
 
     logChatRequest({
       timestamp: new Date().toISOString(),

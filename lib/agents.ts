@@ -126,6 +126,35 @@ function tryOpenDB(): BetterSQLiteDB | null {
     // Add user_id for multi-user support (v9 migration)
     try { db.exec(`ALTER TABLE agents ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default'`); } catch {}
 
+    // ── Seed default agents (idempotent) ─────────────────────────────────────
+    const now = new Date().toISOString();
+    const seedStmt = db.prepare(`
+      INSERT OR IGNORE INTO agents
+        (id, name, description, system_prompt, department,
+         allow_web, allow_files, ask_before_tools, ask_before_web, ask_before_files,
+         response_style,
+         override_allow_web, override_allow_files, override_ask_before_tools,
+         override_ask_before_web, override_ask_before_files, override_response_style,
+         created_at, updated_at, user_id)
+      VALUES (?, ?, ?, ?, ?, 1, 1, 0, 1, 1, 'balanced', 0, 0, 0, 0, 0, 0, ?, ?, 'default')
+    `);
+    seedStmt.run(
+      "00000000-0000-0000-0000-000000000001",
+      "Research Agent",
+      "Deep-dive research, fact-finding, and summarisation.",
+      "You are a meticulous research assistant. When given a topic, search broadly, synthesise key findings, and present them clearly with sources where possible.",
+      "research",
+      now, now,
+    );
+    seedStmt.run(
+      "00000000-0000-0000-0000-000000000002",
+      "X Agent",
+      "Craft engaging X (Twitter) posts, threads, and social copy.",
+      "You are a social media strategist specialising in X (formerly Twitter). Write punchy, engaging posts and threads. Match the user's voice and tone.",
+      "social",
+      now, now,
+    );
+
     return db;
   } catch {
     return null;

@@ -230,7 +230,7 @@ export function DashboardWelcome({ email }: Props) {
                 ⚡ Set up X posting
               </Link>
               <Link
-                href="/officebuilding"
+                href="/officebuilding?agent=research"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-colors"
                 style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }}
               >
@@ -240,21 +240,21 @@ export function DashboardWelcome({ email }: Props) {
           ) : (
             <>
               <Link
-                href="/officebuilding"
+                href="/officebuilding?agent=social"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-colors"
                 style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }}
               >
                 📝 Draft an X post
               </Link>
               <Link
-                href="/officebuilding"
+                href="/officebuilding?agent=social"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-colors"
                 style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }}
               >
                 🧵 Create a thread
               </Link>
               <Link
-                href="/officebuilding"
+                href="/officebuilding?agent=research"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-colors"
                 style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }}
               >
