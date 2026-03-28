@@ -157,6 +157,7 @@ export default function SetupPage() {
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(true);
   const [alreadyHasConfig, setAlreadyHasConfig] = useState(false);
+  const [hasRunningInstance, setHasRunningInstance] = useState(false);
 
   const [form, setForm] = useState<FormState>({
     OPENCLAW_GATEWAY_URL: "http://127.0.0.1:19001",
@@ -195,7 +196,7 @@ export default function SetupPage() {
           fetch("/api/settings"),
         ]);
         const [status, settings] = await Promise.all([
-          statusRes.json() as Promise<{ configured: boolean; hasConfig: boolean }>,
+          statusRes.json() as Promise<{ configured: boolean; hasConfig: boolean; hasRunningInstance: boolean }>,
           settingsRes.json(),
         ]);
 
@@ -223,6 +224,7 @@ export default function SetupPage() {
 
         if (!cancelled) {
           setAlreadyHasConfig(status.hasConfig);
+          setHasRunningInstance(status.hasRunningInstance ?? false);
           setLoading(false);
         }
       } catch {
@@ -536,6 +538,32 @@ export default function SetupPage() {
               continuing.
             </p>
 
+            {/* Running container banner */}
+            {hasRunningInstance && (
+              <div
+                style={{
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  marginBottom: 20,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                }}
+              >
+                <span style={{ fontSize: 18, lineHeight: 1 }}>✅</span>
+                <div>
+                  <p style={{ margin: "0 0 3px", fontSize: 13, fontWeight: 600, color: "#166534" }}>
+                    You&apos;re already set up
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12, color: "#166534", opacity: 0.8 }}>
+                    Your agent container is running. Gateway routing is automatic — you don&apos;t need to configure this manually.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Summary */}
             <div
               style={{
@@ -607,8 +635,8 @@ export default function SetupPage() {
                 ← Back
               </button>
               <button
-                style={btn(true, !testResult?.ok || saving)}
-                disabled={!testResult?.ok || saving}
+                style={btn(true, !(testResult?.ok || hasRunningInstance) || saving)}
+                disabled={!(testResult?.ok || hasRunningInstance) || saving}
                 onClick={async () => {
                   const ok = await saveGatewaySettings();
                   if (ok) setStep(4);

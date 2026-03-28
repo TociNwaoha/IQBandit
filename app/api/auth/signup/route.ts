@@ -14,6 +14,7 @@ import {
   setAuthCookie,
 } from "@/lib/auth-helpers";
 import { createUser, userExists } from "@/lib/user-db";
+import { saveSettings } from "@/lib/settings";
 
 export async function POST(request: NextRequest) {
   let body: { email?: string; password?: string; name?: string };
@@ -81,6 +82,16 @@ export async function POST(request: NextRequest) {
     { status: 201 }
   );
   setAuthCookie(response, token);
+
+  // Mark setup complete for new SaaS users — they don't need the global gateway wizard
+  saveSettings({ SETUP_WIZARD_DONE: "true" });
+  response.cookies.set("iqbandit_setup", "done", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+    path: "/",
+  });
 
   console.log(`[auth] signup email=${cleanEmail} userId=${userId}`);
   return response;

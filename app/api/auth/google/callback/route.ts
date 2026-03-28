@@ -19,6 +19,7 @@ import {
   createUser,
   updateUser,
 } from "@/lib/user-db";
+import { saveSettings } from "@/lib/settings";
 
 interface GoogleTokenResponse {
   access_token:  string;
@@ -131,6 +132,18 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(new URL(dest, APP_URL));
 
   setAuthCookie(response, token);
+
+  // Mark setup complete for new SaaS users — they don't need the global gateway wizard
+  if (isNewUser) {
+    saveSettings({ SETUP_WIZARD_DONE: "true" });
+    response.cookies.set("iqbandit_setup", "done", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365, // 1 year
+      path: "/",
+    });
+  }
 
   // Clear the CSRF state cookie
   response.cookies.set("oauth_state", "", {
