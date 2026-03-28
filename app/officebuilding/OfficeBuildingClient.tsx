@@ -883,6 +883,13 @@ export function OfficeBuildingClient({
   const [activeAgentId, setActiveAgentId] = useState<string>("");
   const [agentTools, setAgentTools]       = useState<{ provider_id: string; action_ids: "*" | string[] }[]>([]);
 
+  // ── research mode state ─────────────────────────────────────────────────────
+  const [researchMode,  setResearchMode]  = useState(false);
+  const [searching,     setSearching]     = useState(false);
+  const [searchQuery,   setSearchQuery]   = useState<string | null>(null);
+  const [searchesUsed,  setSearchesUsed]  = useState<number | null>(null);
+  const [searchesLimit, setSearchesLimit] = useState<number | null>(null);
+
   // ── tool suggestion state ───────────────────────────────────────────────────
   const [connectedProviders, setConnectedProviders] = useState<SlimProvider[]>([]);
   const [suggestion, setSuggestion]                 = useState<ToolSuggestion | null>(null);
@@ -1017,6 +1024,45 @@ export function OfficeBuildingClient({
     setSuggestion(null);
     setLoading(true);
 
+    // ── Research Mode: forced search pipeline ──────────────────────────────
+    let searchContext = "";
+    if (researchMode) {
+      setSearching(true);
+      setSearchQuery(text);
+      try {
+        const searchRes = await fetch("/api/research", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ query: text }),
+        });
+        if (searchRes.status === 429) {
+          const d = await searchRes.json() as { error: string };
+          setMessages([
+            ...nextMessages,
+            { role: "assistant", content: d.error, timestamp: new Date().toISOString() },
+          ]);
+          setLoading(false);
+          return;
+        }
+        if (searchRes.ok) {
+          const d = await searchRes.json() as {
+            research_context: string;
+            searches_used: number;
+            searches_limit: number | null;
+          };
+          setSearchesUsed(d.searches_used ?? null);
+          setSearchesLimit(d.searches_limit ?? null);
+          if (d.research_context) {
+            searchContext = d.research_context;
+          }
+        }
+      } catch { /* research failed — continue without context */ }
+      finally {
+        setSearching(false);
+        setSearchQuery(null);
+      }
+    }
+
     // Ensure a conversation record exists before sending to the gateway.
     let convId = activeConversationId;
     if (!convId) {
@@ -1038,11 +1084,14 @@ export function OfficeBuildingClient({
     }
 
     // Strip client-only timestamp field before sending to the API.
+    // When Research Mode injected search context, append it to the last user
+    // message payload only — the displayed message stays clean.
     const apiMessages = [
       ...(systemPrompt.trim()
         ? [{ role: "system" as const, content: systemPrompt.trim() }]
         : []),
-      ...nextMessages.map(({ role, content }) => ({ role, content })),
+      ...nextMessages.slice(0, -1).map(({ role, content }) => ({ role, content })),
+      { role: "user" as const, content: searchContext ? text + searchContext : text },
     ];
 
     try {
@@ -1681,12 +1730,33 @@ export function OfficeBuildingClient({
               {/* Bottom bar */}
               <div className="absolute bottom-3 left-4 right-3 flex items-center justify-between">
                 <span className="text-xs" style={{ color: P.placeholder }}>
-                  {loading
+                  {searching && searchQuery
+                    ? `🔍 Searching "${searchQuery.slice(0, 35)}…"`
+                    : loading
                     ? "Thinking…"
                     : isDisabled
                     ? "Chat disabled"
                     : "⌘ Enter to send"}
                 </span>
+                <div className="flex items-center gap-2">
+                  {researchMode && searchesUsed !== null && searchesLimit !== null && (
+                    <span className="text-xs" style={{ color: P.placeholder }}>
+                      {searchesUsed}/{searchesLimit} searches today
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setResearchMode((prev) => !prev)}
+                    disabled={isDisabled}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full transition-all disabled:cursor-not-allowed"
+                    style={{
+                      background: researchMode ? P.fg : P.muted,
+                      color:      researchMode ? P.fgLight : P.placeholder,
+                      border:     `1px solid ${P.border}`,
+                    }}
+                    title={researchMode ? "Research Mode ON — searches web before answering" : "Research Mode OFF"}
+                  >
+                    🔍 {researchMode ? "Research ON" : "Research"}
+                  </button>
                 <button
                   onClick={handleSubmit}
                   disabled={loading || !input.trim() || isDisabled}
@@ -1739,6 +1809,7 @@ export function OfficeBuildingClient({
                   )}
                   Send
                 </button>
+                </div>
               </div>
             </div>
           </div>

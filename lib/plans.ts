@@ -70,6 +70,14 @@ export function getPlanLimits(planId: PlanId): PlanLimits {
   return PLANS[planId];
 }
 
+/** Daily web search limits per plan (Research Mode). Infinity = unlimited. */
+export const SEARCH_LIMITS: Record<PlanId, number> = {
+  free:        10,
+  starter:     Infinity,
+  pro:         Infinity,
+  bandit_plus: Infinity,
+};
+
 /** Returns all plan IDs in ascending order of tier. */
 export const ALL_PLAN_IDS: readonly PlanId[] = [
   "free",

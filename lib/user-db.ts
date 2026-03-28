@@ -40,6 +40,13 @@ function tryOpenDB(): BetterSQLiteDB | null {
       );
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
       CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
+
+      CREATE TABLE IF NOT EXISTS daily_searches (
+        user_id TEXT NOT NULL,
+        date    TEXT NOT NULL,
+        count   INTEGER DEFAULT 0,
+        PRIMARY KEY (user_id, date)
+      );
     `);
 
     // Safe migrations — add columns that may be missing from older DBs
@@ -175,6 +182,24 @@ export function userExists(email: string): boolean {
   if (!db) return false;
   const row = db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email);
   return row !== undefined;
+}
+
+/** Returns the number of searches a user has performed today (UTC date). */
+export function getSearchUsage(userId: string, date: string): number {
+  if (!db) return 0;
+  const row = db.prepare(
+    "SELECT count FROM daily_searches WHERE user_id = ? AND date = ?"
+  ).get(userId, date) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+
+/** Increments (or inserts) the daily search counter for a user. */
+export function incrementSearchCount(userId: string, date: string): void {
+  if (!db) return;
+  db.prepare(`
+    INSERT INTO daily_searches (user_id, date, count) VALUES (?, ?, 1)
+    ON CONFLICT(user_id, date) DO UPDATE SET count = count + 1
+  `).run(userId, date);
 }
 
 /**
