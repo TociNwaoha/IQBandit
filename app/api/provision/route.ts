@@ -97,7 +97,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const openclaw_url = `http://${vpsHost}:${hostPort}`;
+    const openclaw_url = `http://localhost:${hostPort}`;
 
     const instance = createInstance({
       user_id:             userId,
