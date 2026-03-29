@@ -29,7 +29,7 @@ export interface PlanLimits {
 
 const PLANS: Record<PlanId, PlanLimits> = {
   free: {
-    memory:  "1024m",
+    memory:  "2048m",
     cpus:    "0.5",
     storage: "5G",
     label:   "Free",

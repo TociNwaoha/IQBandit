@@ -80,7 +80,12 @@ export async function createUserContainer(
     `SEARXNG_URL=http://iqbandit-searxng:8080`,
   ];
 
-  const envFlags = [...llmEnv, ...searchEnv]
+  // Node.js default heap limit (~512MB) is too low for openclaw-gateway.
+  // Set it to 90% of the container memory limit (numeric portion only).
+  const memMB = parseInt(limits.memory, 10);
+  const heapMB = Math.floor(memMB * 0.9);
+
+  const envFlags = [...llmEnv, ...searchEnv, `NODE_OPTIONS=--max-old-space-size=${heapMB}`]
     .map((e) => `-e "${e}"`)
     .join(" \\\n  ");
 
