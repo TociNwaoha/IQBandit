@@ -37,11 +37,17 @@ export function allocatePort(): number {
 
 /**
  * Creates the VPS data directories for a user before starting their container.
+ * Also writes an openclaw.json config so the gateway binds to the LAN interface
+ * (0.0.0.0) rather than loopback-only, making Docker port mapping work.
  * Safe to call multiple times (mkdir -p).
  */
 export async function ensureDataDirs(userId: string): Promise<void> {
   const base = `/home/iqbandit/users/${userId}`;
   await runCommand(`mkdir -p ${base}/config ${base}/workspace`);
+  // gateway.bind=lan makes openclaw-gateway listen on 0.0.0.0 instead of
+  // 127.0.0.1 (loopback), which is required for Docker port mapping to work.
+  const cfg = JSON.stringify({ gateway: { bind: "lan" } });
+  await runCommand(`echo '${cfg}' > ${base}/config/openclaw.json`);
 }
 
 // ─── container lifecycle ─────────────────────────────────────────────────────
