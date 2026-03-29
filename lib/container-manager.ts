@@ -37,17 +37,12 @@ export function allocatePort(): number {
 
 /**
  * Creates the VPS data directories for a user before starting their container.
- * Also writes an openclaw.json config so the gateway binds to the LAN interface
- * (0.0.0.0) rather than loopback-only, making Docker port mapping work.
  * Safe to call multiple times (mkdir -p).
+ * The openclaw.json config is written by createUserContainer (which has LLM config).
  */
 export async function ensureDataDirs(userId: string): Promise<void> {
   const base = `/home/iqbandit/users/${userId}`;
   await runCommand(`mkdir -p ${base}/config ${base}/workspace`);
-  // gateway.bind=lan makes openclaw-gateway listen on 0.0.0.0 instead of
-  // 127.0.0.1 (loopback), which is required for Docker port mapping to work.
-  const cfg = JSON.stringify({ gateway: { bind: "lan" } });
-  await runCommand(`echo '${cfg}' > ${base}/config/openclaw.json`);
 }
 
 // ─── container lifecycle ─────────────────────────────────────────────────────
@@ -68,18 +63,45 @@ export async function createUserContainer(
   const base   = `/home/iqbandit/users/${userId}`;
   const limits = getPlanLimits(planId);
 
-  const llmEnv = userConfig.model_mode === "byok" && userConfig.byok_api_key
-    ? [
-        `OPENAI_API_KEY=${userConfig.byok_api_key}`,
-        `OPENAI_BASE_URL=${userConfig.byok_base_url ?? ""}`,
-        `OPENAI_MODEL=${userConfig.byok_model_id ?? "gpt-4o"}`,
-      ]
-    : [
-        // BanditLM — DeepSeek under the hood
-        `OPENAI_API_KEY=${process.env.DEEPSEEK_API_KEY ?? ""}`,
-        `OPENAI_BASE_URL=https://api.deepseek.com/v1`,
-        `OPENAI_MODEL=deepseek-chat`,
-      ];
+  // ── Build openclaw.json for this user ───────────────────────────────────────
+  // provider/model-id format is what OpenClaw's model registry uses internally.
+  // gateway.bind=lan makes the gateway listen on 0.0.0.0 (required for Docker
+  // port mapping). chatCompletions.enabled=true activates the REST endpoint.
+  const isByok = userConfig.model_mode === "byok" && Boolean(userConfig.byok_api_key);
+  const providerName = isByok ? "byok" : "deepseek";
+  const modelId      = isByok ? (userConfig.byok_model_id ?? "gpt-4o") : "deepseek-chat";
+  const providerCfg  = isByok
+    ? {
+        baseUrl: userConfig.byok_base_url ?? "https://api.openai.com/v1",
+        apiKey:  userConfig.byok_api_key!,
+        api:     "openai-completions",
+        models:  [{ id: modelId, name: "Custom (BYOK)", reasoning: false, input: ["text"],
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    contextWindow: 128000, maxTokens: 16000 }],
+      }
+    : {
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey:  process.env.DEEPSEEK_API_KEY ?? "",
+        api:     "openai-completions",
+        models:  [{ id: "deepseek-chat", name: "BanditLM", reasoning: false, input: ["text"],
+                    cost: { input: 1.0, output: 5.0, cacheRead: 0, cacheWrite: 0 },
+                    contextWindow: 64000, maxTokens: 8000 }],
+      };
+
+  const openclawConfig = {
+    agents: { defaults: { compaction: { mode: "safeguard" }, model: `${providerName}/${modelId}` } },
+    models: { mode: "merge", providers: { [providerName]: providerCfg } },
+    commands: { native: "auto", nativeSkills: "auto", restart: true, ownerDisplay: "raw" },
+    gateway: {
+      bind: "lan",
+      controlUi: { allowedOrigins: ["http://localhost:18789", "http://127.0.0.1:18789"] },
+      http: { endpoints: { chatCompletions: { enabled: true } } },
+    },
+  };
+
+  // base64-encode so the JSON survives shell quoting regardless of key contents
+  const cfgB64 = Buffer.from(JSON.stringify(openclawConfig, null, 2)).toString("base64");
+  await runCommand(`echo ${cfgB64} | base64 -d > ${base}/config/openclaw.json`);
 
   const searchEnv = [
     `SEARCH_SERVICE_URL=http://iqbandit-search:9000`,
@@ -91,7 +113,7 @@ export async function createUserContainer(
   const memMB = parseInt(limits.memory, 10);
   const heapMB = Math.floor(memMB * 0.9);
 
-  const envFlags = [...llmEnv, ...searchEnv, `NODE_OPTIONS=--max-old-space-size=${heapMB}`]
+  const envFlags = [...searchEnv, `NODE_OPTIONS=--max-old-space-size=${heapMB}`]
     .map((e) => `-e "${e}"`)
     .join(" \\\n  ");
 
