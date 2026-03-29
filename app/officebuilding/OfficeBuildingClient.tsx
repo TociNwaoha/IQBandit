@@ -12,6 +12,7 @@ import type { ChatMode } from "@/lib/llm";
 import { ToolsPanel }                           from "./ToolsPanel";
 import { ToolSuggestionCard }                   from "./ToolSuggestionCard";
 import { suggestTool, type ToolSuggestion, type SlimProvider } from "./toolSuggester";
+import { ChatMessage } from "@/components/ChatMessage";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -98,131 +99,7 @@ function formatRelTime(iso: string): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-/** Format a message timestamp: time-only within 24 h, date + time beyond. */
-function formatMsgTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  if (diffMs < 86_400_000) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-  return (
-    d.toLocaleDateString([], { month: "short", day: "numeric" }) +
-    " · " +
-    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  );
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function UserBubble({ content, timestamp }: { content: string; timestamp?: string }) {
-  return (
-    <div className="flex justify-end">
-      <div className="max-w-[78%]">
-        <div
-          className="rounded-2xl rounded-tr-sm px-4 py-3"
-          style={{ background: P.fg }}
-        >
-          <p
-            className="text-sm whitespace-pre-wrap leading-relaxed"
-            style={{ color: P.fgLight }}
-          >
-            {content}
-          </p>
-        </div>
-        {timestamp && (
-          <div className="flex justify-end mt-1">
-            <span className="text-[10px] pr-1" style={{ color: P.placeholder }}>
-              {formatMsgTime(timestamp)}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AssistantBubble({
-  content,
-  onCopy,
-  copied,
-  timestamp,
-  onRegenerate,
-}: {
-  content: string;
-  onCopy: () => void;
-  copied: boolean;
-  timestamp?: string;
-  onRegenerate?: () => void;
-}) {
-  return (
-    <div className="flex justify-start group">
-      <div className="max-w-[78%]">
-        <div
-          className="rounded-2xl rounded-tl-sm px-4 py-3"
-          style={{
-            background: P.card,
-            border: `1px solid ${P.border}`,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-          }}
-        >
-          <p
-            className="text-sm whitespace-pre-wrap leading-relaxed"
-            style={{ color: P.fg }}
-          >
-            {content}
-          </p>
-        </div>
-
-        {/* Action row: timestamp always visible; copy + regenerate appear on hover */}
-        <div className="flex items-center gap-3 mt-1.5 pl-1">
-          {timestamp && (
-            <span className="text-[10px]" style={{ color: P.placeholder }}>
-              {formatMsgTime(timestamp)}
-            </span>
-          )}
-
-          {/* Copy button */}
-          <button
-            onClick={onCopy}
-            className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs"
-            style={{ color: P.placeholder }}
-          >
-            {copied ? (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                Copied
-              </>
-            ) : (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy
-              </>
-            )}
-          </button>
-
-          {/* Regenerate button — only rendered on the last assistant message */}
-          {onRegenerate && (
-            <button
-              onClick={onRegenerate}
-              className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs"
-              style={{ color: P.placeholder }}
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Regenerate
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function ThinkingBubble() {
   return (
@@ -840,7 +717,6 @@ export function OfficeBuildingClient({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   /** Stores the last user message that failed to send, enabling one-click retry. */
   const [failedInput, setFailedInput] = useState<string | null>(null);
 
@@ -1377,13 +1253,6 @@ export function OfficeBuildingClient({
     }
   }
 
-  function handleCopy(content: string, index: number) {
-    navigator.clipboard.writeText(content).then(() => {
-      setCopiedIndex(index);
-      setTimeout(() => setCopiedIndex(null), 2000);
-    });
-  }
-
   /** Append a tool result summary to the composer textarea for the user to review and send. */
   function insertToolResult(text: string) {
     setInput((prev) => (prev ? `${prev}\n\n${text}` : text));
@@ -1605,16 +1474,12 @@ export function OfficeBuildingClient({
             <div className="max-w-3xl mx-auto space-y-6 pb-2">
               {messages.map((msg, i) => {
                 const isLastMsg = i === messages.length - 1;
-                return msg.role === "user" ? (
-                  <UserBubble key={i} content={msg.content} timestamp={msg.timestamp} />
-                ) : (
-                  <AssistantBubble
+                return (
+                  <ChatMessage
                     key={i}
+                    role={msg.role}
                     content={msg.content}
-                    onCopy={() => handleCopy(msg.content, i)}
-                    copied={copiedIndex === i}
-                    timestamp={msg.timestamp}
-                    onRegenerate={isLastMsg && !loading ? handleRegenerate : undefined}
+                    isStreaming={loading && isLastMsg && msg.role === "assistant"}
                   />
                 );
               })}
