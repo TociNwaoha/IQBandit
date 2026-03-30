@@ -6,6 +6,14 @@ const nextConfig: NextConfig = {
   // This tells Next.js to leave the require("better-sqlite3") call as-is at runtime
   // instead of trying to bundle it. Without this, SQLite logging fails at startup.
   serverExternalPackages: ["better-sqlite3", "ssh2"],
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [{ key: "X-DNS-Prefetch-Control", value: "on" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

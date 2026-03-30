@@ -564,9 +564,20 @@ function ConversationSidebar({
       {/* List */}
       <div style={{ flex: 1, overflowY: "auto", padding: "0 4px 12px" }}>
         {loading ? (
-          <p style={{ fontSize: 11, color: P.placeholder, textAlign: "center", padding: "20px 0" }}>
-            Loading…
-          </p>
+          <div style={{ padding: "8px 8px" }}>
+            {[80, 65, 72].map((w, i) => (
+              <div
+                key={i}
+                className="animate-pulse"
+                style={{
+                  height: 32, borderRadius: 6, marginBottom: 4,
+                  background: P.muted,
+                  width: `${w}%`,
+                  opacity: 0.7,
+                }}
+              />
+            ))}
+          </div>
         ) : conversations.length === 0 ? (
           <p style={{ fontSize: 11, color: P.placeholder, textAlign: "center", padding: "20px 8px", lineHeight: 1.5 }}>
             No conversations yet
@@ -729,11 +740,12 @@ export function OfficeBuildingClient({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [convsLoading, setConvsLoading] = useState(true);
+  const [appReady, setAppReady]         = useState(false);
 
   // ── scroll anchor ───────────────────────────────────────────────────────────
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, loading]);
 
   // ── usage info (model mode + credits) ──────────────────────────────────────
@@ -751,7 +763,7 @@ export function OfficeBuildingClient({
       .then((r) => r.json())
       .then((convs: Conversation[]) => setConversations(convs))
       .catch(() => {})
-      .finally(() => setConvsLoading(false));
+      .finally(() => { setConvsLoading(false); setAppReady(true); });
   }, []);
 
   // ── agent state ─────────────────────────────────────────────────────────────
@@ -1402,7 +1414,32 @@ export function OfficeBuildingClient({
           className="flex-1 overflow-y-auto px-6 py-6"
           style={{ background: P.bg }}
         >
-          {isEmpty ? (
+          {!appReady ? (
+            /* ── Loading skeleton — shown until conversation list resolves ── */
+            <div className="max-w-3xl mx-auto space-y-6 pb-2 pt-4">
+              {/* Skeleton assistant bubble */}
+              <div style={{ display: "flex", gap: 12 }}>
+                <div className="animate-pulse" style={{ width: 28, height: 28, borderRadius: "50%", background: P.muted, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div className="animate-pulse" style={{ height: 12, borderRadius: 4, background: P.muted, width: "70%", marginBottom: 8 }} />
+                  <div className="animate-pulse" style={{ height: 12, borderRadius: 4, background: P.muted, width: "50%" }} />
+                </div>
+              </div>
+              {/* Skeleton user bubble */}
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div className="animate-pulse" style={{ height: 36, borderRadius: 8, background: P.muted, width: "40%" }} />
+              </div>
+              {/* Skeleton assistant bubble */}
+              <div style={{ display: "flex", gap: 12 }}>
+                <div className="animate-pulse" style={{ width: 28, height: 28, borderRadius: "50%", background: P.muted, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div className="animate-pulse" style={{ height: 12, borderRadius: 4, background: P.muted, width: "85%", marginBottom: 8 }} />
+                  <div className="animate-pulse" style={{ height: 12, borderRadius: 4, background: P.muted, width: "60%", marginBottom: 8 }} />
+                  <div className="animate-pulse" style={{ height: 12, borderRadius: 4, background: P.muted, width: "40%" }} />
+                </div>
+              </div>
+            </div>
+          ) : isEmpty ? (
             isDisabled ? (
               <DisabledNotice />
             ) : (
