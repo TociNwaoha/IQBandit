@@ -6,7 +6,8 @@
  * Palette: #F7F7F4 bg · #FFFFFF card · #F0F0EC muted · #1A1A17 fg · #E8E8E4 border
  */
 
-import { useRef, useEffect, useState, useMemo, KeyboardEvent } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
+import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
 import type { ChatCompletionResponse } from "@/lib/openclaw";
 import type { ChatMode } from "@/lib/llm";
 import { ToolsPanel }                           from "./ToolsPanel";
@@ -237,7 +238,7 @@ interface UsageInfo {
   byok_provider:   string | null;
 }
 
-function ConversationSidebar({
+const ConversationSidebar = memo(function ConversationSidebar({
   conversations,
   activeId,
   loading,
@@ -263,6 +264,106 @@ function ConversationSidebar({
   const [renamePopup, setRenamePopup]     = useState<{ id: string; value: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const dropdownRef                       = useRef<HTMLDivElement>(null);
+
+  const conversationList = useMemo(() =>
+    conversations.map((conv) => {
+      const isActive  = conv.id === activeId;
+      const isHovered = hoveredId === conv.id;
+      const menuOpen  = openMenu?.id === conv.id;
+
+      return (
+        <div
+          key={conv.id}
+          style={{ position: "relative", marginBottom: 1 }}
+          onMouseEnter={() => setHoveredId(conv.id)}
+          onMouseLeave={() => setHoveredId(null)}
+        >
+          {/* Clickable row */}
+          <button
+            onClick={() => { setOpenMenu(null); onSelect(conv); }}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              padding: "7px 28px 7px 8px",
+              borderRadius: 7,
+              border: "none",
+              cursor: "pointer",
+              background: isActive ? P.muted : "transparent",
+              display: "block",
+            }}
+          >
+            <p
+              style={{
+                fontSize: 12,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? P.fg : P.sub,
+                margin: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {conv.title}
+            </p>
+            {(() => {
+              const a = conv.agent_id ? agents.find((ag) => ag.id === conv.agent_id) : null;
+              return a ? (
+                <p style={{ fontSize: 10, color: P.sub, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {agentEmoji(a.name)} {a.name}
+                </p>
+              ) : null;
+            })()}
+            <p style={{ fontSize: 10, color: P.placeholder, margin: "1px 0 0" }}>
+              {formatRelTime(conv.updated_at)}
+            </p>
+          </button>
+
+          {/* 3-dot button — visible on hover or when menu is open */}
+          {(isHovered || menuOpen) && (
+            <button
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (menuOpen) {
+                  setOpenMenu(null);
+                } else {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setOpenMenu({
+                    id: conv.id,
+                    top: rect.bottom + 4,
+                    left: Math.max(4, rect.right - 148),
+                  });
+                }
+              }}
+              style={{
+                position: "absolute",
+                right: 4,
+                top: "50%",
+                transform: "translateY(-50%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                border: "none",
+                background: menuOpen ? P.muted : "transparent",
+                color: P.sub,
+                cursor: "pointer",
+                fontSize: 14,
+                letterSpacing: 1,
+                lineHeight: 1,
+                padding: 0,
+              }}
+              title="More options"
+            >
+              ···
+            </button>
+          )}
+        </div>
+      );
+    }),
+  [conversations, activeId, agents, hoveredId, openMenu, onSelect]);
 
   // Close dropdown when clicking outside — uses contains() so clicks INSIDE
   // the dropdown (on Delete/Rename/Share) don't race against the close listener.
@@ -583,103 +684,7 @@ function ConversationSidebar({
             No conversations yet
           </p>
         ) : (
-          conversations.map((conv) => {
-            const isActive  = conv.id === activeId;
-            const isHovered = hoveredId === conv.id;
-            const menuOpen  = openMenu?.id === conv.id;
-
-            return (
-              <div
-                key={conv.id}
-                style={{ position: "relative", marginBottom: 1 }}
-                onMouseEnter={() => setHoveredId(conv.id)}
-                onMouseLeave={() => setHoveredId(null)}
-              >
-                {/* Clickable row */}
-                <button
-                  onClick={() => { setOpenMenu(null); onSelect(conv); }}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "7px 28px 7px 8px",
-                    borderRadius: 7,
-                    border: "none",
-                    cursor: "pointer",
-                    background: isActive ? P.muted : "transparent",
-                    display: "block",
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: 12,
-                      fontWeight: isActive ? 600 : 400,
-                      color: isActive ? P.fg : P.sub,
-                      margin: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {conv.title}
-                  </p>
-                  {(() => {
-                    const a = conv.agent_id ? agents.find((ag) => ag.id === conv.agent_id) : null;
-                    return a ? (
-                      <p style={{ fontSize: 10, color: P.sub, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {agentEmoji(a.name)} {a.name}
-                      </p>
-                    ) : null;
-                  })()}
-                  <p style={{ fontSize: 10, color: P.placeholder, margin: "1px 0 0" }}>
-                    {formatRelTime(conv.updated_at)}
-                  </p>
-                </button>
-
-                {/* 3-dot button — visible on hover or when menu is open */}
-                {(isHovered || menuOpen) && (
-                  <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (menuOpen) {
-                        setOpenMenu(null);
-                      } else {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setOpenMenu({
-                          id: conv.id,
-                          top: rect.bottom + 4,
-                          left: Math.max(4, rect.right - 148),
-                        });
-                      }
-                    }}
-                    style={{
-                      position: "absolute",
-                      right: 4,
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 20,
-                      height: 20,
-                      borderRadius: 4,
-                      border: "none",
-                      background: menuOpen ? P.muted : "transparent",
-                      color: P.sub,
-                      cursor: "pointer",
-                      fontSize: 14,
-                      letterSpacing: 1,
-                      lineHeight: 1,
-                      padding: 0,
-                    }}
-                    title="More options"
-                  >
-                    ···
-                  </button>
-                )}
-              </div>
-            );
-          })
+          conversationList
         )}
       </div>
 
@@ -707,7 +712,7 @@ function ConversationSidebar({
       )}
     </div>
   );
-}
+});
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -724,7 +729,6 @@ export function OfficeBuildingClient({
 
   // ── chat state ──────────────────────────────────────────────────────────────
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -743,7 +747,8 @@ export function OfficeBuildingClient({
   const [appReady, setAppReady]         = useState(false);
 
   // ── scroll anchor ───────────────────────────────────────────────────────────
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef    = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<ChatInputHandle>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, loading]);
@@ -756,6 +761,39 @@ export function OfficeBuildingClient({
       .then((d: UsageInfo) => setUsageInfo(d))
       .catch(() => {});
   }, []);
+
+  // ── chat history — pre-populate on mount ────────────────────────────────────
+  useEffect(() => {
+    fetch("/api/chat/history")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { messages: { role: string; content: string }[] } | null) => {
+        if (d?.messages?.length) {
+          setMessages(
+            d.messages.map((m) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── chat history — save assistant message on stream complete ─────────────────
+  const prevLoadingRef = useRef(false);
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading) {
+      const last = messages[messages.length - 1];
+      if (last?.role === "assistant" && last.content.trim()) {
+        fetch("/api/chat/history", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ role: "assistant", content: last.content }),
+        }).catch(() => {});
+      }
+    }
+    prevLoadingRef.current = loading;
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── load conversation list on mount ────────────────────────────────────────
   useEffect(() => {
@@ -777,6 +815,8 @@ export function OfficeBuildingClient({
   const [searchQuery,   setSearchQuery]   = useState<string | null>(null);
   const [searchesUsed,  setSearchesUsed]  = useState<number | null>(null);
   const [searchesLimit, setSearchesLimit] = useState<number | null>(null);
+
+  const handleToggleResearch = useCallback(() => setResearchMode((prev) => !prev), []);
 
   // ── tool suggestion state ───────────────────────────────────────────────────
   const [connectedProviders, setConnectedProviders] = useState<SlimProvider[]>([]);
@@ -861,7 +901,7 @@ export function OfficeBuildingClient({
 
   // ── actions ────────────────────────────────────────────────────────────────
 
-  async function selectConversation(conv: Conversation) {
+  const selectConversation = useCallback(async (conv: Conversation) => {
     if (conv.id === activeConversationId || loading) return;
     setActiveConversationId(conv.id);
     setActiveAgentId(conv.agent_id ?? "");
@@ -887,14 +927,14 @@ export function OfficeBuildingClient({
     } finally {
       setLoading(false);
     }
-  }
+  }, [activeConversationId, loading]);
 
   /**
    * Core send function. Adds a user message, calls the gateway, appends
    * the assistant reply. On failure, reverts messages and sets failedInput
    * so the error banner can offer a one-click retry.
    */
-  async function sendMessage(text: string) {
+  const sendMessage = useCallback(async (text: string) => {
     if (!text || loading || isDisabled) return;
 
     const userMessage: Message = {
@@ -905,12 +945,18 @@ export function OfficeBuildingClient({
     const nextMessages = [...messages, userMessage];
 
     setMessages(nextMessages);
-    setInput("");
     setError(null);
     setInfoMessage(null);
     setFailedInput(null);
     setSuggestion(null);
     setLoading(true);
+
+    // ── persist user message ────────────────────────────────────────────────
+    fetch("/api/chat/history", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ role: "user", content: text }),
+    }).catch(() => {});
 
     // ── Research Mode: forced search pipeline ──────────────────────────────
     let searchContext = "";
@@ -1142,11 +1188,7 @@ export function OfficeBuildingClient({
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleSubmit() {
-    sendMessage(input.trim());
-  }
+  }, [messages, loading, isDisabled, researchMode, model, systemPrompt, activeConversationId, activeAgentId, filteredProviders]);
 
   /** Resends the last failed user message without duplicating conversation state. */
   async function handleRetry() {
@@ -1258,35 +1300,28 @@ export function OfficeBuildingClient({
     }
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  }
-
   /** Append a tool result summary to the composer textarea for the user to review and send. */
   function insertToolResult(text: string) {
-    setInput((prev) => (prev ? `${prev}\n\n${text}` : text));
+    chatInputRef.current?.insertText(text);
   }
 
-  function handleNewChat() {
+  const handleNewChat = useCallback(() => {
     setMessages([]);
     setActiveConversationId(null);
     setActiveAgentId("");
     setError(null);
     setInfoMessage(null);
-    setInput("");
+    chatInputRef.current?.clear();
     setFailedInput(null);
-  }
+  }, []);
 
-  async function handleDeleteConversation(id: string) {
+  const handleDeleteConversation = useCallback(async (id: string) => {
     await fetch(`/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeConversationId === id) handleNewChat();
-  }
+  }, [activeConversationId, handleNewChat]);
 
-  async function handleRenameConversation(id: string, title: string) {
+  const handleRenameConversation = useCallback(async (id: string, title: string) => {
     await fetch(`/api/conversations/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1295,9 +1330,23 @@ export function OfficeBuildingClient({
     setConversations((prev) =>
       prev.map((c) => (c.id === id ? { ...c, title } : c))
     );
-  }
+  }, []);
 
   const isEmpty = messages.length === 0 && !loading;
+
+  const messageList = useMemo(() =>
+    messages.map((msg, i) => {
+      const isLastMsg = i === messages.length - 1;
+      return (
+        <ChatMessage
+          key={i}
+          role={msg.role}
+          content={msg.content}
+          isStreaming={loading && isLastMsg && msg.role === "assistant"}
+        />
+      );
+    }),
+  [messages, loading]);
 
   return (
     <div className="flex h-full min-w-0">
@@ -1509,17 +1558,7 @@ export function OfficeBuildingClient({
             )
           ) : (
             <div className="max-w-3xl mx-auto space-y-6 pb-2">
-              {messages.map((msg, i) => {
-                const isLastMsg = i === messages.length - 1;
-                return (
-                  <ChatMessage
-                    key={i}
-                    role={msg.role}
-                    content={msg.content}
-                    isStreaming={loading && isLastMsg && msg.role === "assistant"}
-                  />
-                );
-              })}
+              {messageList}
               {/* Tool suggestion — appears after the last assistant message while not loading */}
               {!loading && suggestion && messages.at(-1)?.role === "assistant" && (
                 <ToolSuggestionCard
@@ -1594,128 +1633,18 @@ export function OfficeBuildingClient({
         )}
 
         {/* ── Input area ────────────────────────────────────── */}
-        <div
-          className="px-6 pb-5 pt-3 shrink-0"
-          style={{
-            background: P.card,
-            borderTop: `1px solid ${P.border}`,
-          }}
-        >
-          <div className="max-w-3xl mx-auto">
-            <div
-              className="relative rounded-2xl transition-all"
-              style={{
-                background: P.card,
-                border: `1px solid ${P.border}`,
-                boxShadow: isDisabled
-                  ? "none"
-                  : "0 1px 3px rgba(0,0,0,0.05)",
-                opacity: isDisabled ? 0.5 : 1,
-              }}
-            >
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={loading || isDisabled}
-                rows={3}
-                placeholder={
-                  isDisabled
-                    ? "Chat is not configured — see Settings"
-                    : "Send a message…"
-                }
-                className="w-full bg-transparent px-4 pt-4 pb-12 text-sm focus:outline-none resize-none disabled:cursor-not-allowed"
-                style={{
-                  color: P.fg,
-                }}
-              />
-              {/* Bottom bar */}
-              <div className="absolute bottom-3 left-4 right-3 flex items-center justify-between">
-                <span className="text-xs" style={{ color: P.placeholder }}>
-                  {searching && searchQuery
-                    ? `🔍 Searching "${searchQuery.slice(0, 35)}…"`
-                    : loading
-                    ? "Thinking…"
-                    : isDisabled
-                    ? "Chat disabled"
-                    : "⌘ Enter to send"}
-                </span>
-                <div className="flex items-center gap-2">
-                  {researchMode && searchesUsed !== null && searchesLimit !== null && (
-                    <span className="text-xs" style={{ color: P.placeholder }}>
-                      {searchesUsed}/{searchesLimit} searches today
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setResearchMode((prev) => !prev)}
-                    disabled={isDisabled}
-                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full transition-all disabled:cursor-not-allowed"
-                    style={{
-                      background: researchMode ? P.fg : P.muted,
-                      color:      researchMode ? P.fgLight : P.placeholder,
-                      border:     `1px solid ${P.border}`,
-                    }}
-                    title={researchMode ? "Research Mode ON — searches web before answering" : "Research Mode OFF"}
-                  >
-                    🔍 {researchMode ? "Research ON" : "Research"}
-                  </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading || !input.trim() || isDisabled}
-                  className="flex items-center gap-1.5 text-xs font-medium rounded-xl px-3.5 py-2 transition-all disabled:cursor-not-allowed"
-                  style={{
-                    background:
-                      loading || !input.trim() || isDisabled
-                        ? P.muted
-                        : P.fg,
-                    color:
-                      loading || !input.trim() || isDisabled
-                        ? P.placeholder
-                        : P.fgLight,
-                  }}
-                >
-                  {loading ? (
-                    <svg
-                      className="animate-spin w-3.5 h-3.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
-                  ) : (
-                    <svg
-                      className="w-3.5 h-3.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                      />
-                    </svg>
-                  )}
-                  Send
-                </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ChatInput
+          ref={chatInputRef}
+          onSend={sendMessage}
+          isLoading={loading}
+          researchMode={researchMode}
+          onToggleResearch={handleToggleResearch}
+          searching={searching}
+          searchQuery={searchQuery}
+          searchesUsed={searchesUsed}
+          searchesLimit={searchesLimit}
+          disabled={isDisabled}
+        />
       </div>
 
       {/* ── Tools panel (right sidebar) ─────────────────────── */}
