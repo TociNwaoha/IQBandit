@@ -466,18 +466,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Instance guard ────────────────────────────────────────────────────────
-  // Every user needs a running OpenClaw container. BanditLM users without one
-  // are auto-provisioned in the background and fall through to a direct
-  // DeepSeek call so they still get a response while the container spins up.
-  // BYOK users without a container get a support message.
+  // ── Direct call routing ───────────────────────────────────────────────────
+  // BanditLM and BYOK both bypass the OpenClaw gateway and call their provider
+  // directly. OpenClaw's WS-based gateway does not expose a REST chat endpoint,
+  // so routing through it would always 404. Direct calls are always used.
+  //
+  // BanditLM → DeepSeek API via DEEPSEEK_API_KEY (built-in, no setup needed).
+  //            Background-provision the container if it hasn't been created yet.
+  // BYOK     → User's own provider using their stored encrypted key.
+  //            Return a clear error if the key hasn't been configured yet.
+  // Other    → Gateway path (reserved for future OpenClaw REST support).
   let useDirect = false;
   let directUrl = "";
   let directKey = "";
 
-  if (!instance || instance.status !== "running") {
-    if (isBanditLM) {
-      // Fire background provision (non-blocking)
+  if (isBanditLM) {
+    useDirect = true;
+    directUrl = `${BANDIT_LM.api_url}/chat/completions`;
+    directKey = process.env.DEEPSEEK_API_KEY ?? "";
+    // If no container yet, spin one up in the background (non-blocking)
+    if (!instance || instance.status !== "running") {
       const baseUrl = process.env.APP_INTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
       fetch(`${baseUrl}/api/provision`, {
         method:  "POST",
@@ -487,16 +495,26 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({ plan: "free" }),
       }).catch(() => {});
-      // Fall through to direct DeepSeek call while container provisions
-      useDirect = true;
-      directUrl = `${BANDIT_LM.api_url}/chat/completions`;
-      directKey = process.env.DEEPSEEK_API_KEY ?? "";
-    } else {
+    }
+  } else if (isByok) {
+    const decryptedKey = decrypt(freshUser!.byok_api_key ?? "");
+    if (!decryptedKey) {
       return NextResponse.json(
-        { error: "Your agent container is not running. Please contact support." },
-        { status: 503 },
+        {
+          error: "BYOK API key not configured. Go to Settings → AI Model to add your key.",
+          code: "BYOK_KEY_MISSING",
+        },
+        { status: 400 },
       );
     }
+    useDirect = true;
+    directUrl = `${freshUser!.byok_base_url}/chat/completions`;
+    directKey = decryptedKey;
+  } else if (!instance || instance.status !== "running") {
+    return NextResponse.json(
+      { error: "Your agent container is not running. Please contact support." },
+      { status: 503 },
+    );
   }
 
   // ── 2. Rate limiting ─────────────────────────────────────────────────────
